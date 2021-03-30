@@ -578,6 +578,12 @@ void sp_mapdb_ruletable_flush(void)
 	int hash_bkt;
 
 	spin_lock(&sp_mapdb_lock);
+	if (rule_manager.rule_count == 0) {
+		spin_unlock(&sp_mapdb_lock);
+		DEBUG_WARN("The rule table is already empty. No action needed. \n");
+		return;
+	}
+
 	for (i = 0; i < SP_MAPDB_RULE_MAX_PRECEDENCENUM; i++) {
 		node_list = &rule_manager.prec_map[i];
 		/*
@@ -585,11 +591,10 @@ void sp_mapdb_ruletable_flush(void)
 		 * This is required because we are using list_for_each_entry_safe,
 		 * which allows in-loop deletion of the node.
 		 *
-		 * kfree is sufficient since free_list is called in sp_mapdb_ruletable_flush,
-		 * which happens before sp_hook_init. So no datapath is reading at this point.
 		 */
 		list_for_each_entry_safe(node, tmp, &node_list->rule_list, rule_list) {
-			kfree(node);
+			list_del_rcu(&node->rule_list);
+			call_rcu(&node->rcu, sp_rule_destroy_rcu);
 		}
 	}
 
@@ -601,6 +606,7 @@ void sp_mapdb_ruletable_flush(void)
 	rule_manager.rule_count = 0;
 	spin_unlock(&sp_mapdb_lock);
 }
+EXPORT_SYMBOL(sp_mapdb_ruletable_flush);
 
 /*
  * sp_mapdb_rule_update()
