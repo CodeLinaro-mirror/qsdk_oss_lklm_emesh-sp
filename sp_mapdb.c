@@ -722,7 +722,9 @@ void sp_mapdb_ruletable_print(void)
  *  Get latency parameters associated with a sp rule.
  */
 void sp_mapdb_get_wlan_latency_params(struct sk_buff *skb,
-		uint8_t *service_interval, uint32_t *burst_size, uint8_t *smac, uint8_t *dmac)
+		uint8_t *service_interval_dl, uint32_t *burst_size_dl,
+		uint8_t *service_interval_ul, uint32_t *burst_size_ul,
+		uint8_t *smac, uint8_t *dmac)
 {
 	struct sp_mapdb_rule_node *curnode;
 	int i;
@@ -736,8 +738,10 @@ void sp_mapdb_get_wlan_latency_params(struct sk_buff *skb,
 		list_for_each_entry_rcu(curnode, &(rule_manager.prec_map[i].rule_list), rule_list) {
 			DEBUG_INFO("Matching with rid = %d\n", curnode->rule.id);
 			if (sp_mapdb_rule_match(skb, &curnode->rule, smac, dmac)) {
-				*service_interval = curnode->rule.inner.service_interval;
-				*burst_size = curnode->rule.inner.burst_size;
+				*service_interval_dl = curnode->rule.inner.service_interval_dl;
+				*burst_size_dl = curnode->rule.inner.burst_size_dl;
+				*service_interval_ul = curnode->rule.inner.service_interval_ul;
+				*burst_size_ul = curnode->rule.inner.burst_size_ul;
 				rcu_read_unlock();
 				return;
 			}
@@ -748,8 +752,10 @@ void sp_mapdb_get_wlan_latency_params(struct sk_buff *skb,
 	 * No match found, set both latency parameters to zero
 	 * which is invalid value
 	 */
-	*service_interval = 0;
-	*burst_size = 0;
+	*service_interval_dl = 0;
+	*burst_size_dl = 0;
+	*service_interval_ul = 0;
+	*burst_size_ul = 0;
 
 	rcu_read_unlock();
 }
