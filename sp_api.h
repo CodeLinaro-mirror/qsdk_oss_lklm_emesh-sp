@@ -158,8 +158,11 @@ struct sp_rule_inner {
 	 * Specified msec
 	 * This is min latency expectation and is used
 	 * by Wi-Fi FW for peer tid queue scheduling
+	 * Separate parameter for DL and UL
 	 */
 	uint8_t service_interval;
+	uint8_t service_interval_dl;
+	uint8_t service_interval_ul;
 	/*
 	 * Burst size
 	 * Specified in bytes
@@ -167,6 +170,8 @@ struct sp_rule_inner {
 	 * scheduling
 	 */
 	uint32_t burst_size;
+	uint32_t burst_size_dl;
+	uint32_t burst_size_ul;
 };
 
 /*
