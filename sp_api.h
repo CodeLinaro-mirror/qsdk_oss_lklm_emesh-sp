@@ -160,6 +160,8 @@ struct sp_rule_inner {
 	 * by Wi-Fi FW for peer tid queue scheduling
 	 */
 	uint8_t service_interval;
+	uint8_t service_interval_dl;
+	uint8_t service_interval_ul;
 	/*
 	 * Burst size
 	 * Specified in bytes
@@ -167,6 +169,8 @@ struct sp_rule_inner {
 	 * scheduling
 	 */
 	uint32_t burst_size;
+	uint32_t burst_size_dl;
+	uint32_t burst_size_ul;
 };
 
 /*
