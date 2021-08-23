@@ -42,7 +42,7 @@ static int sp_enable_handler(struct ctl_table *ctl, int write, void __user *buff
 		return ret;
 	}
 
-	if (data >= sp_state) {
+	if (data == sp_state) {
 		DEBUG_WARN("Invalid action(already in this state).\n");
 		return 0;
 	}
