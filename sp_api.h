@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  *
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
  * copyright notice and this permission notice appear in all copies.
@@ -48,6 +50,7 @@
 #define	SP_RULE_FLAG_MATCH_VLAN_ID_SENSE	0x400000	/* VLAN id sense mask */
 #define	SP_RULE_FLAG_MATCH_DSCP			0x800000	/* Match dscp match mask */
 #define	SP_RULE_FLAG_MATCH_DSCP_SENSE		0x1000000	/* DSCP sense mask */
+#define	SP_RULE_FLAG_MATCH_VLAN_PCP		0x2000000	/* Vlan priority match mask */
 
 /*
  * sp_mapdb_update_results
@@ -89,6 +92,7 @@ typedef enum sp_mapdb_notify_types sp_mapdb_notify_type_t;
 enum sp_mapdb_add_remove_filter_types {
 	SP_MAPDB_ADD_REMOVE_FILTER_DELETE, 		/* Delete a rule. */
 	SP_MAPDB_ADD_REMOVE_FILTER_ADD, 		/* Add a rule. */
+	SP_MAPDB_ADD_REMOVE_FILTER_QUERY,		/* Query rule table */
 };
 typedef enum sp_mapdb_add_remove_filter_types sp_mapdb_add_remove_filter_type_t;
 
@@ -169,6 +173,23 @@ struct sp_rule_inner {
 	 */
 	uint32_t burst_size_dl;
 	uint32_t burst_size_ul;
+	/*
+	 * Vlan Priority
+	 */
+	uint8_t vlan_pcp;
+	/*
+	 * Service class id
+	 */
+	uint8_t service_class_id;
+};
+
+/*
+ * sp_rule_classifier_type
+ * 	This enum defines rule classifier type
+ */
+enum sp_rule_classifier_type {
+	SP_RULE_TYPE_MESH,	/* For non-sawf rule */
+	SP_RULE_TYPE_SAWF,	/* For SAWF rule */
 };
 
 /*
@@ -180,13 +201,50 @@ struct sp_rule {
 	sp_mapdb_add_remove_filter_type_t cmd;			/* Command type. 1 means add 0 means delete. */
 	struct sp_rule_inner inner;				/* Inner structure */
 	uint8_t rule_precedence;				/* Rule precedence – higher number means higher priority. */
+	uint8_t classifier_type;				/* rule_type:0 for Emesh case, and 1 for SAWF */
 };
 
-sp_mapdb_update_result_t sp_mapdb_rule_update(struct sp_rule*);
+/*
+ * sp_3tuple_info
+ * 	This structure lists 3 tuple parameters related to source/destination
+ */
+struct sp_3tuple_info {
+	uint8_t mac[ETH_HLEN];		/* MAC address */
+	uint16_t port;			/* Port ID */
+	union {
+		uint32_t ipv4_addr;		/* IPV4 address */
+		uint32_t ipv6_addr[4];		/* IPV6 address */
+	} ip;
+};
+
+/*
+ * sp_rule_input_params
+ * 	This structure lists input parameters for ecm query
+ */
+struct sp_rule_input_params {
+	struct sp_3tuple_info src;		/* Source 3 tuple parameters */
+	struct sp_3tuple_info dst;		/* Destination 3 tuple parameters */
+	uint16_t protocol;			/* Protocol number */
+	uint8_t dscp;				/* DSCP value */
+	uint8_t pcp;				/* Priority */
+};
+
+/*
+ * sp_rule_output_params
+ * 	This structure lists output parameters from SPM to ECM
+ */
+struct sp_rule_output_params {
+	uint8_t service_class_id;	/* Service class ID */
+	uint16_t rule_id;		/* Rule ID */
+};
+
+sp_mapdb_update_result_t sp_mapdb_rule_update(struct sp_rule *newrule);
 
 void sp_mapdb_get_wlan_latency_params(struct sk_buff *skb, uint8_t *service_interval_dl, uint32_t *burst_size_dl, uint8_t *service_interval_ul, uint32_t *burst_size_ul, uint8_t *smac, uint8_t *dmac);
 void sp_mapdb_apply(struct sk_buff *skb, uint8_t *smac, uint8_t *dmac);
 int sp_mapdb_rule_update_register_notify(void (*sp_mapdb_rule_update_callback)(uint8_t add_rm_md, uint32_t valid_flag, struct sp_rule *r));
 void sp_mapdb_rule_update_unregister_notify(void);
 void sp_mapdb_ruletable_flush(void);
+void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *params,
+			      struct sp_rule_output_params *rule_output);
 #endif

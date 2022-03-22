@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  *
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
  * copyright notice and this permission notice appear in all copies.
@@ -130,6 +132,11 @@ static int __init sp_init(void)
 	sp_mapdb_init();
 	sp_sysctl_header = register_sysctl_table(sp_sysctl_root);
 
+	if (!sp_netlink_init()) {
+		DEBUG_ERROR("Unable to initialize SPM generic netlink\n");
+		return 0;
+	}
+
 	DEBUG_TRACE("Service Prioritization Module loaded successfully.\n");
 	return 0;
 }
@@ -146,6 +153,10 @@ static void __exit sp_exit(void)
 
 	if (sp_state == 1) {
 		sp_hook_fini();
+	}
+
+	if (!sp_netlink_exit()) {
+		DEBUG_ERROR("Unable to unregister SPM generic netlink\n");
 	}
 
 	sp_mapdb_fini();
