@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  *
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
  * copyright notice and this permission notice appear in all copies.
@@ -33,12 +35,54 @@
 #define SP_MAPDB_ENABLE_POST_ROUTING_HOOK		0x2
 
 /*
+ * sp_gnl_cmds
+ * 	Generic netlink commands
+ */
+enum sp_gnl_cmds {
+	SPM_CMD_RULE_UNSPEC,
+	SPM_CMD_RULE_ACTION,
+	SPM_CMD_RULE_QUERY,
+	SPM_CMD_MAX,
+};
+
+/*
+ * sp_gnl_attr
+ * 	Generic attributes
+ */
+enum sp_gnl_attr {
+	SP_GNL_ATTR_UNSPEC,
+	SP_GNL_ATTR_ID,
+	SP_GNL_ATTR_ADD_DELETE_RULE,
+	SP_GNL_ATTR_RULE_PRECEDENCE,
+	SP_GNL_ATTR_RULE_OUTPUT,
+	SP_GNL_ATTR_USER_PRIORITY,
+	SP_GNL_ATTR_SRC_MAC,
+	SP_GNL_ATTR_DST_MAC,
+	SP_GNL_ATTR_SRC_IPV4_ADDR,
+	SP_GNL_ATTR_DST_IPV4_ADDR,
+	SP_GNL_ATTR_SRC_IPV6_ADDR,
+	SP_GNL_ATTR_DST_IPV6_ADDR,
+	SP_GNL_ATTR_SRC_PORT,
+	SP_GNL_ATTR_DST_PORT,
+	SP_GNL_ATTR_PROTOCOL_NUMBER,
+	SP_GNL_ATTR_VLAN_ID,
+	SP_GNL_ATTR_DSCP,
+	SP_GNL_ATTR_VLAN_PCP,
+	SP_GNL_ATTR_SERVICE_CLASS_ID,
+	SP_GNL_ATTR_MSCS_TID_BITMAP,
+	SP_GNL_ATTR_MAX,
+};
+
+#define SP_GNL_MAX (SP_GNL_ATTR_MAX + 1)
+
+/*
  * sp_mapdb_rule_output_types
  *	Types of rule_output value
  */
 enum sp_mapdb_rule_output_types {
 	SP_MAPDB_USE_DSCP = 0x08,	/* Apply DSCP value */
 	SP_MAPDB_USE_UP,		/* Apply UP value */
+	SP_MAPDB_USE_MSCS_PRIO,		/* Apply MSCS priority value */
 	SP_MAPDB_NO_MATCH,		/* No rule match (Apply default PCP) */
 };
 typedef enum sp_mapdb_rule_output_types sp_mapdb_rule_output_type_t;
@@ -99,4 +143,6 @@ void sp_mapdb_fini(void);
 int sp_hook_init(void);
 void sp_hook_fini(void);
 
+//bool sp_netlink_init(void);
+//bool sp_netlink_exit(void);
 #endif /* SP_MAPDB_H_ */

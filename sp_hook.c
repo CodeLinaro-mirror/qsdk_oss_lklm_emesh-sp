@@ -40,6 +40,8 @@ unsigned int sp_hook_pre_routing(void *priv, struct sk_buff *skb, const struct n
 {
 	struct ethhdr *precheck;
 
+	DEBUG_INFO("******* sp_hook_pre_routing()\n");
+
 	if (sp_sysctl_data & SP_MAPDB_ENABLE_PRE_ROUTING_HOOK) {
 
 		precheck = eth_hdr(skb);
@@ -47,7 +49,7 @@ unsigned int sp_hook_pre_routing(void *priv, struct sk_buff *skb, const struct n
 			return NF_ACCEPT;
 		}
 
-		DEBUG_TRACE("%px: Prerouting bridge\n%pM\nto: %pM\n", skb, precheck->h_source, precheck->h_dest);
+		DEBUG_INFO("%px: Prerouting bridge\n%pM\nto: %pM\n", skb, precheck->h_source, precheck->h_dest);
 
 		sp_mapdb_apply(skb, precheck->h_source, precheck->h_dest);
 	}
@@ -62,7 +64,7 @@ unsigned int sp_hook_pre_routing(void *priv, struct sk_buff *skb, const struct n
  * It will be compiled and registered only when we want downlink traffic
  * to be applied to SP rules too.
  */
-#if defined(SP_DOWNLINK_APPLICABLE)
+//#if defined(SP_DOWNLINK_APPLICABLE)
 unsigned int sp_hook_post_routing(void *priv, struct sk_buff *skb, const struct nf_hook_state *state)
 {
 	struct ethhdr *precheck;
@@ -87,7 +89,7 @@ unsigned int sp_hook_post_routing(void *priv, struct sk_buff *skb, const struct 
 
 	return NF_ACCEPT;
 }
-#endif
+//#endif
 
 struct nf_hook_ops sp_hook_ops[] __read_mostly = {
 	{
@@ -96,7 +98,8 @@ struct nf_hook_ops sp_hook_ops[] __read_mostly = {
 		.hooknum = NF_BR_PRE_ROUTING,
 		.hook = sp_hook_pre_routing,
 	}
-#if defined(SP_DOWNLINK_APPLICABLE)
+// Need to enable post routing for MSCS to work
+//#if defined(SP_DOWNLINK_APPLICABLE)
 	,
 	{
 		.pf = NFPROTO_BRIDGE,
@@ -104,7 +107,7 @@ struct nf_hook_ops sp_hook_ops[] __read_mostly = {
 		.hooknum = NF_BR_POST_ROUTING,
 		.hook = sp_hook_post_routing,
 	}
-#endif
+//#endif
 };
 
 /*
