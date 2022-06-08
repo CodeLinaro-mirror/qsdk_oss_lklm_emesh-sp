@@ -912,15 +912,42 @@ static inline bool sp_mapdb_rule_match_sawf(struct sp_rule *rule, struct sp_rule
 	}
 
 	if (flags & SP_RULE_FLAG_MATCH_VLAN_PCP) {
+		uint8_t vlan_pcp;
+		if (params->vlan_tci == SP_RULE_INVALID_VLAN_TCI) {
+			DEBUG_WARN("Vlan PCP match failed due to invalid vlan tag!\n");
+			return false;
+		}
+
+		vlan_pcp = (params->vlan_tci & VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT;
+
 		DEBUG_INFO("Matching PCP..\n");
-		DEBUG_INFO("Input Vlan PCP = %u\n", params->pcp);
+		DEBUG_INFO("Input Vlan pcp = %u\n", vlan_pcp);
 		DEBUG_INFO("rule Vlan PCP = %u\n", rule->inner.vlan_pcp);
-		compare_result = params->pcp == rule->inner.vlan_pcp;
+		compare_result = vlan_pcp == rule->inner.vlan_pcp;
 		if (!compare_result) {
 			DEBUG_WARN("Vlan PCP match failed!\n");
 			return false;
 		}
 	}
+
+	if (flags & SP_RULE_FLAG_MATCH_VLAN_ID) {
+		uint16_t vlan_id;
+		if (params->vlan_tci == SP_RULE_INVALID_VLAN_TCI) {
+			DEBUG_WARN("Vlan ID match failed due to invalid vlan tag!\n");
+			return false;
+		}
+
+		vlan_id = params->vlan_tci & VLAN_VID_MASK;
+		DEBUG_INFO("Matching Vlan ID..\n");
+		DEBUG_INFO("Input Vlan ID = %u\n", vlan_id);
+		DEBUG_INFO("rule Vlan ID = %u\n", rule->inner.vlan_id);
+		compare_result = vlan_id == rule->inner.vlan_id;
+		if (!compare_result) {
+			DEBUG_WARN("Vlan ID match failed!\n");
+			return false;
+		}
+	}
+
 	return true;
 }
 

@@ -52,6 +52,8 @@
 #define	SP_RULE_FLAG_MATCH_DSCP_SENSE		0x1000000	/* DSCP sense mask */
 #define	SP_RULE_FLAG_MATCH_VLAN_PCP		0x2000000	/* Vlan priority match mask */
 
+#define	SP_RULE_INVALID_VLAN_TCI		0xFFFF		/* Invalid vlan tci */
+
 /*
  * sp_mapdb_update_results
  * 	Result values of rule update.
@@ -226,7 +228,7 @@ struct sp_rule_input_params {
 	struct sp_3tuple_info dst;		/* Destination 3 tuple parameters */
 	uint16_t protocol;			/* Protocol number */
 	uint8_t dscp;				/* DSCP value */
-	uint8_t pcp;				/* Priority */
+	uint16_t vlan_tci;			/* Vlan TCI */
 };
 
 /*
