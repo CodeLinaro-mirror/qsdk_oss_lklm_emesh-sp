@@ -21,6 +21,7 @@
 #include <linux/etherdevice.h>
 #include <linux/if_vlan.h>
 #include <net/genetlink.h>
+#include <linux/notifier.h>
 
 #include "sp_mapdb.h"
 #include "sp_types.h"
@@ -31,14 +32,45 @@ DEFINE_SPINLOCK(sp_mapdb_lock);
 /* SP Rule manager */
 static struct sp_mapdb_rule_manager rule_manager;
 
-/* Rule update callback */
-static __rcu sp_mapdb_rule_update_callback_t sp_callback;
-
 /* TSL protection of single writer rule update. */
 static unsigned long single_writer = 0;
 
 /* Spm generic netlink family */
 static struct genl_family sp_genl_family;
+
+/*
+ * Registration/Unregistration methods for SPM rule update/add/delete notifications.
+ */
+static RAW_NOTIFIER_HEAD(sp_mapdb_notifier_chain);
+
+/*
+ * sp_mapdb_notifiers_call()
+ *	Call registered notifiers.
+ */
+int sp_mapdb_notifiers_call(struct sp_rule *info, unsigned long val)
+{
+	return raw_notifier_call_chain(&sp_mapdb_notifier_chain, val, info);
+}
+
+/*
+ * sp_mapdb_notifier_register()
+ *	Register SPM rule event notifiers.
+ */
+void sp_mapdb_notifier_register(struct notifier_block *nb)
+{
+	raw_notifier_chain_register(&sp_mapdb_notifier_chain, nb);
+}
+EXPORT_SYMBOL(sp_mapdb_notifier_register);
+
+/*
+ * sp_mapdb_notifier_unregister()
+ *	Unregister SPM rule event notifiers.
+ */
+void sp_mapdb_notifier_unregister(struct notifier_block *nb)
+{
+	raw_notifier_chain_unregister(&sp_mapdb_notifier_chain, nb);
+}
+EXPORT_SYMBOL(sp_mapdb_notifier_unregister);
 
 /*
  * sp_mapdb_rules_init()
@@ -58,26 +90,6 @@ static inline void sp_mapdb_rules_init(void)
 	rule_manager.rule_count = 0;
 
 	DEBUG_TRACE("%px: Finish Initializing SP ruledb\n", &rule_manager);
-}
-
-/*
- * sp_mapdb_notify()
- * 	Notifies the registered module about the rule table changes.
- */
-static void sp_mapdb_notify(uint8_t add_remove_modify, struct sp_rule *newrule)
-{
-	sp_mapdb_rule_update_callback_t cb;
-
-	rcu_read_lock();
-	cb = rcu_dereference(sp_callback);
-	if (cb) {
-		/*
-		 * Registered cb will perform packet field base connection flush in
-		 * flow database depending on rule flag
-		 */
-		cb(add_remove_modify, newrule->inner.flags, newrule);
-	}
-	rcu_read_unlock();
 }
 
 /*
@@ -185,7 +197,7 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 		 * Since this is inserting a new rule, the old precendence
 		 * and field update do not possess any meaning.
 		 */
-		sp_mapdb_notify(SP_MAPDB_ADD_RULE, newrule);
+		sp_mapdb_notifiers_call(newrule, SP_MAPDB_ADD_RULE);
 
 		return SP_MAPDB_UPDATE_RESULT_SUCCESS_ADD;
 	}
@@ -202,7 +214,7 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 		/*
 		 * If precedence doesn't change then it has to be some fields modified.
 		 */
-		sp_mapdb_notify(SP_MAPDB_MODIFY_RULE, newrule);
+		sp_mapdb_notifiers_call(newrule, SP_MAPDB_MODIFY_RULE);
 
 		call_rcu(&cur_rule_node->rcu, sp_rule_destroy_rcu);
 
@@ -220,7 +232,7 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 	old_prec = cur_rule_node->rule.rule_precedence;
 	field_update = memcmp(&cur_rule_node->rule.inner, &newrule->inner, sizeof(struct sp_rule_inner)) ? true : false;
 	DEBUG_INFO("%px:Success rule id=%d rule_type: %d\n", newrule, newrule->id, rule_type);
-	sp_mapdb_notify(SP_MAPDB_MODIFY_RULE, newrule);
+	sp_mapdb_notifiers_call(newrule, SP_MAPDB_MODIFY_RULE);
 	call_rcu(&cur_rule_node->rcu, sp_rule_destroy_rcu);
 
 	return SP_MAPDB_UPDATE_RESULT_SUCCESS_MODIFY;
@@ -264,7 +276,7 @@ static sp_mapdb_update_result_t sp_mapdb_rule_delete(uint32_t ruleid, uint8_t ru
 	 * There is no point on having old_prec
 	 * and field_update in remove rules case.
 	 */
-	sp_mapdb_notify(SP_MAPDB_REMOVE_RULE, &tobedeleted->rule);
+	sp_mapdb_notifiers_call(&tobedeleted->rule, SP_MAPDB_REMOVE_RULE);
 	call_rcu(&tobedeleted->rcu, sp_rule_destroy_rcu);
 
 	return SP_MAPDB_UPDATE_RESULT_SUCCESS_DELETE;
@@ -666,44 +678,6 @@ sp_mapdb_update_result_t sp_mapdb_rule_update(struct sp_rule *newrule)
 	return error_code;
 }
 EXPORT_SYMBOL(sp_mapdb_rule_update);
-
-/*
- * sp_mapdb_rule_update_register_notify()
- * 	Notification registration function.
- *
- * The callback function is to get notification upon rule update.
- * sp_mapdb_rule_update_callback_t - callback function pointer.
- * See definition in header file about its argument's meaning.
- */
-int sp_mapdb_rule_update_register_notify(sp_mapdb_rule_update_callback_t cb)
-{
-	if (rcu_access_pointer(sp_callback)) {
-		DEBUG_WARN("Fail to register callback(cb_block busy)\n");
-
-		return -1;
-	}
-
-	rcu_assign_pointer(sp_callback, cb);
-	synchronize_rcu();
-	DEBUG_INFO("Callback successfully registered.");
-
-	return 0;
-}
-EXPORT_SYMBOL(sp_mapdb_rule_update_register_notify);
-
-/*
- * sp_mapdb_rule_update_unregister_notify()
- * 	Notification unregistration function.
- */
-void sp_mapdb_rule_update_unregister_notify(void)
-{
-	rcu_assign_pointer(sp_callback, NULL);
-
-	synchronize_rcu();
-
-	DEBUG_INFO("Successfully invoked unregister callback.");
-}
-EXPORT_SYMBOL(sp_mapdb_rule_update_unregister_notify);
 
 /*
  * sp_mapdb_rule_print_input_params()
