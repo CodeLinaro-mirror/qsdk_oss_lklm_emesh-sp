@@ -343,8 +343,8 @@ sp_mapdb_update_result_t sp_mapdb_rule_update(struct sp_rule *newrule);
 
 void sp_mapdb_get_wlan_latency_params(struct sk_buff *skb, uint8_t *service_interval_dl, uint32_t *burst_size_dl, uint8_t *service_interval_ul, uint32_t *burst_size_ul, uint8_t *smac, uint8_t *dmac);
 void sp_mapdb_apply(struct sk_buff *skb, uint8_t *smac, uint8_t *dmac);
-int sp_mapdb_rule_update_register_notify(void (*sp_mapdb_rule_update_callback)(uint8_t add_rm_md, uint32_t valid_flag, struct sp_rule *r));
-void sp_mapdb_rule_update_unregister_notify(void);
+void sp_mapdb_notifier_register(struct notifier_block *nb);
+void sp_mapdb_notifier_unregister(struct notifier_block *nb);
 void sp_mapdb_ruletable_flush(void);
 void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *params,
 			      struct sp_rule_output_params *rule_output);
