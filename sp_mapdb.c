@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  *
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -702,6 +702,7 @@ static inline void sp_mapdb_rule_print_input_params(struct sp_mapdb_rule_node *c
 	printk("src_ipv6_mask: %pI6: dst_ipv6_mask: %pI6\n", &curnode->rule.inner.src_ipv6_addr_mask, &curnode->rule.inner.dst_ipv6_addr_mask);
 	printk("match pattern value: %x: match pattern mask: %x\n", curnode->rule.inner.match_pattern_value, curnode->rule.inner.match_pattern_mask);
 	printk("MSCS TID BITMAP: %x: Priority Limit Value: %x\n", curnode->rule.inner.mscs_tid_bitmap, curnode->rule.inner.priority_limit);
+	printk("Interface Index : %d\n", curnode->rule.inner.ifindex);
 }
 
 /*
@@ -824,8 +825,22 @@ static inline bool sp_mapdb_rule_match_sawf(struct sp_rule *rule, struct sp_rule
 		DEBUG_INFO("rule dst = %pM\n", rule->inner.da);
 		compare_result = ether_addr_equal(params->dst.mac, rule->inner.da);
 		if (!compare_result) {
-			DEBUG_WARN("DST match failed!\n");
-			return false;
+
+			/*
+			 * If the rule is sawf-scs type, then we further check for
+			 * mac address of the netdevice interfaces.
+			 */
+			if (rule->classifier_type == SP_RULE_TYPE_SAWF_SCS) {
+				compare_result = ether_addr_equal(params->dev_addr, rule->inner.da) &&
+							(params->ifindex == rule->inner.ifindex);
+				if (!compare_result) {
+					DEBUG_WARN("Netdev address and device ID match failed!\n");
+					return false;
+				}
+			} else {
+				DEBUG_WARN("DST mac address match failed!\n");
+				return false;
+			}
 		}
 	}
 
@@ -1020,7 +1035,7 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 	uint8_t vlan_pcp_remark = SP_RULE_INVALID_VLAN_PCP_REMARK;
 	uint8_t service_class_id = SP_RULE_INVALID_SERVICE_CLASS_ID;
 	uint8_t output = SP_MAPDB_USE_DSCP;
-	uint16_t rule_id = SP_RULE_INVALID_RULE_ID;
+	uint32_t rule_id = SP_RULE_INVALID_RULE_ID;
 
 	rcu_read_lock();
 	if (rule_manager.rule_count == 0) {
@@ -1039,6 +1054,8 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 	 * rules should be matched in the precedence
 	 * descending order.
 	 */
+
+	/* Traverse for SAWF rule type */
 	for (i = SP_MAPDB_RULE_MAX_PRECEDENCENUM - 1; i >= 0; i--) {
 		list_for_each_entry_rcu(curnode, &(rule_manager.prec_map[i].rule_list), rule_list) {
 			DEBUG_INFO("Matching with rule id = %d (sawf case)\n", curnode->rule.id);
@@ -1054,6 +1071,24 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 			}
 		}
 	}
+
+	/* Traverse for SAWF-SCS rule type */
+	for (i = SP_MAPDB_RULE_MAX_PRECEDENCENUM - 1; i >= 0; i--) {
+		list_for_each_entry_rcu(curnode, &(rule_manager.prec_map[i].rule_list), rule_list) {
+			DEBUG_INFO("Matching with rule id = %d (sawf-scs case)\n", curnode->rule.id);
+			if (curnode->rule.classifier_type == SP_RULE_TYPE_SAWF_SCS) {
+				if (sp_mapdb_rule_match_sawf(&curnode->rule, params)) {
+					output = curnode->rule.inner.rule_output;
+					dscp_remark = curnode->rule.inner.dscp_remark;
+					vlan_pcp_remark = curnode->rule.inner.vlan_pcp_remark;
+					service_class_id = curnode->rule.inner.service_class_id;
+					rule_id = curnode->rule.id;
+					goto set_output;
+				}
+			}
+		}
+	}
+
 
 set_output:
 	rule_output->service_class_id = service_class_id;
@@ -1165,6 +1200,40 @@ set_output:
 EXPORT_SYMBOL(sp_mapdb_apply_mscs);
 
 /*
+ * sp_mapdb_rule_receive_status_notify()
+ * 	Message reply to userspace about the status of rule addition or failure.
+ */
+int sp_mapdb_rule_receive_status_notify(struct sk_buff **msg, void **hdr, struct genl_info *info, uint32_t rule_id, uint8_t rule_result)
+{
+	*msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	if (!*msg) {
+		DEBUG_WARN("Failed to allocate netlink message to accomodate rule\n");
+		return -ENOMEM;
+	}
+
+	*hdr = genlmsg_put(*msg, info->snd_portid, info->snd_seq,
+			&sp_genl_family, 0, SPM_CMD_RULE_ACTION);
+
+	if (!*hdr) {
+		DEBUG_WARN("Failed to put hdr in netlink buffer\n");
+		nlmsg_free(*msg);
+		return -ENOMEM;
+	}
+
+	if (nla_put_u32(*msg, SP_GNL_ATTR_ID, rule_id) ||
+		nla_put_u8(*msg, SP_GNL_ATTR_ADD_DELETE_RULE, rule_result)) {
+		goto put_failure;
+	}
+
+	return 0;
+
+put_failure:
+	genlmsg_cancel(*msg, *hdr);
+	nlmsg_free(*msg);
+	return -EMSGSIZE;
+}
+
+/*
  * sp_mapdb_rule_receive()
  * 	Handles a netlink message from userspace for rule add/delete/update
  */
@@ -1173,6 +1242,10 @@ static inline int sp_mapdb_rule_receive(struct sk_buff *skb, struct genl_info *i
 	struct sp_rule to_sawf_sp = {0};
 	int rule_cmd;
 	uint32_t mask = 0;
+	sp_mapdb_update_result_t err;
+	int rule_result;
+	void *hdr = NULL;
+	struct sk_buff *msg = NULL;
 
 	/*
 	 * Set the invalid output values in rule to avoid these values to be set as 0's in
@@ -1194,15 +1267,17 @@ static inline int sp_mapdb_rule_receive(struct sk_buff *skb, struct genl_info *i
 
 	if (info->attrs[SP_GNL_ATTR_ADD_DELETE_RULE]) {
 		rule_cmd = nla_get_u8(info->attrs[SP_GNL_ATTR_ADD_DELETE_RULE]);
-		if (!rule_cmd) {
-			to_sawf_sp.cmd = SP_MAPDB_ADD_REMOVE_FILTER_DELETE;
+		if (rule_cmd == SP_MAPDB_ADD_REMOVE_FILTER_DELETE) {
+			to_sawf_sp.cmd = rule_cmd;
 			DEBUG_INFO("Deleting rule \n");
-		} else if (rule_cmd == 1) {
-			to_sawf_sp.cmd = SP_MAPDB_ADD_REMOVE_FILTER_ADD;
+		} else if (rule_cmd == SP_MAPDB_ADD_REMOVE_FILTER_ADD) {
+			to_sawf_sp.cmd = rule_cmd;
 			DEBUG_INFO("Adding rule \n");
 		} else {
+			rcu_read_unlock();
 			DEBUG_ERROR("Invalid rule cmd\n");
-			return -EINVAL;
+			rule_result = SP_MAPDB_UPDATE_RESULT_ERR_INVALIDENTRY;
+			goto status_notify;
 		}
 	}
 
@@ -1373,6 +1448,11 @@ static inline int sp_mapdb_rule_receive(struct sk_buff *skb, struct genl_info *i
 		to_sawf_sp.inner.match_pattern_mask = nla_get_u32(info->attrs[SP_GNL_ATTR_MATCH_PATTERN_MASK]);
 	}
 
+	if (info->attrs[SP_GNL_ATTR_IFINDEX]) {
+		to_sawf_sp.inner.ifindex = nla_get_u8(info->attrs[SP_GNL_ATTR_IFINDEX]);
+		DEBUG_INFO("Interface Index: 0x%x\n", to_sawf_sp.inner.ifindex);
+	}
+
 	if (info->attrs[SP_GNL_ATTR_TID_BITMAP]) {
 		to_sawf_sp.inner.mscs_tid_bitmap = nla_get_u8(info->attrs[SP_GNL_ATTR_TID_BITMAP]);
 		DEBUG_INFO("MSCS priority bitmap: 0x%x\n", to_sawf_sp.inner.mscs_tid_bitmap);
@@ -1402,8 +1482,15 @@ static inline int sp_mapdb_rule_receive(struct sk_buff *skb, struct genl_info *i
 	/*
 	 * Update rules in database
 	 */
-	sp_mapdb_rule_update(&to_sawf_sp);
-	return 0;
+	rule_result = sp_mapdb_rule_update(&to_sawf_sp);
+
+status_notify:
+	err = sp_mapdb_rule_receive_status_notify(&msg, &hdr, info, to_sawf_sp.id, rule_result);
+	if (err)
+		return err;
+
+	genlmsg_end(msg, hdr);
+	return genlmsg_unicast(genl_info_net(info), msg, info->snd_portid);
 }
 
 /*
@@ -1505,7 +1592,8 @@ static inline int sp_mapdb_rule_query(struct sk_buff *skb, struct genl_info *inf
 	    nla_put_u32(msg, SP_GNL_ATTR_MATCH_PATTERN_VALUE, rule.inner.match_pattern_value) ||
 	    nla_put_u32(msg, SP_GNL_ATTR_MATCH_PATTERN_MASK, rule.inner.match_pattern_mask) ||
 	    nla_put_u8(msg, SP_RULE_FLAG_MATCH_MSCS_TID_BITMAP, rule.inner.mscs_tid_bitmap) ||
-	    nla_put_u8(msg,  SP_RULE_FLAG_MATCH_PRIORITY_LIMIT, rule.inner.priority_limit)) {
+	    nla_put_u8(msg,  SP_RULE_FLAG_MATCH_PRIORITY_LIMIT, rule.inner.priority_limit) ||
+	    nla_put_u8(msg,  SP_RULE_FLAG_MATCH_IFINDEX, rule.inner.ifindex)) {
 		goto put_failure;
 	}
 
@@ -1554,6 +1642,7 @@ static struct nla_policy sp_genl_policy[SP_GNL_MAX + 1] = {
 	[SP_GNL_ATTR_MATCH_PATTERN_MASK]		= { .type = NLA_U32, },
 	[SP_GNL_ATTR_TID_BITMAP]		= { .type = NLA_U8, },
 	[SP_GNL_ATTR_PRIORITY_LIMIT]		= { .type = NLA_U8, },
+	[SP_GNL_ATTR_IFINDEX]			= { .type = NLA_U8, },
 };
 
 /* Spm generic netlink operations */

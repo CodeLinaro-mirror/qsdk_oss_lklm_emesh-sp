@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  *
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -81,6 +81,7 @@ enum sp_gnl_attr {
 	SP_GNL_ATTR_MATCH_PATTERN_MASK,
 	SP_GNL_ATTR_TID_BITMAP,
 	SP_GNL_ATTR_PRIORITY_LIMIT,
+	SP_GNL_ATTR_IFINDEX,
 	SP_GNL_ATTR_MAX,
 };
 

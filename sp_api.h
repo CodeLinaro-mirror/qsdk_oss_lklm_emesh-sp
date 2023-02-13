@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  *
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -82,13 +82,14 @@
 #define	SP_RULE_FLAG_MATCH_SCS_SPI			0x80000		/* SCS SPI match mask*/
 #define SP_RULE_FLAG_MATCH_MSCS_TID_BITMAP		0x100000	/* MSCS Bitmap match*/
 #define SP_RULE_FLAG_MATCH_PRIORITY_LIMIT		0x200000	/* Priority Limit value*/
+#define	SP_RULE_FLAG_MATCH_IFINDEX			0x400000	/* Interface Index mask */
 
 #define IPV6_ADDR_LEN		4
 
 #define	SP_RULE_INVALID_SERVICE_CLASS_ID	0xFF		/* Invalid Service class ID */
 #define	SP_RULE_INVALID_DSCP_REMARK		0xFF		/* Invalid DSCP remark */
 #define	SP_RULE_INVALID_VLAN_PCP_REMARK		0xFF		/* Invalid vlan PCP remark */
-#define	SP_RULE_INVALID_RULE_ID			0xFFFF		/* Invalid Rule ID */
+#define	SP_RULE_INVALID_RULE_ID			0xFFFFFFFF	/* Invalid Rule ID */
 #define	SP_RULE_INVALID_VLAN_TCI		0xFFFF		/* Invalid vlan tci */
 #define	SP_RULE_INVALID_PRIORITY		0xFF		/* Invalid Priority value */
 #define SP_RULE_INVALID_MSCS_TID_BITMAP		0x00		/* Invalid MSCS Bitmap */
@@ -289,6 +290,11 @@ struct sp_rule_inner {
 	 * Priority limit range
 	 */
 	uint8_t priority_limit;
+
+	/*
+	 * Interface Index
+	 */
+	uint8_t ifindex;
 };
 
 /*
@@ -300,6 +306,7 @@ enum sp_rule_classifier_type {
 	SP_RULE_TYPE_SAWF,	/* For SAWF rule */
 	SP_RULE_TYPE_SCS,	/* For SCS rule */
 	SP_RULE_TYPE_MSCS,	/* For MSCS rule */
+	SP_RULE_TYPE_SAWF_SCS,	/* For SAWF-SCS rule type */
 };
 
 /*
@@ -339,6 +346,8 @@ struct sp_rule_input_params {
 	uint8_t dscp;				/* DSCP value */
 	uint8_t ip_version_type;		/* IP Version type */
 	uint16_t vlan_tci;			/* Vlan TCI */
+	uint8_t ifindex;			/* interface index */
+	uint8_t dev_addr[ETH_HLEN];		/* Netdevice address in case of WDS EXT case */
 };
 
 /*
