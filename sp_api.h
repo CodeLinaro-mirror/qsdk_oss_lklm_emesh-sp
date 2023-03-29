@@ -351,6 +351,16 @@ struct sp_rule_input_params {
 };
 
 /*
+ * sawf_classifier_rule_type
+ *      This enum defines rule classifier type for sawf classifier
+ */
+enum sawf_classifier_rule_type {
+       SAWF_RULE_TYPE_DEFAULT,	/*Admin configured global SAWF rule*/
+       SAWF_RULE_TYPE_SCS,	/*Client specific SAWF rule configured via SCS procedure*/
+       SAWF_RULE_TYPE_MAX,	/*Max SAWF rule type*/
+};
+
+/*
  * sp_rule_output_params
  * 	This structure lists output parameters from SPM to ECM
  */
@@ -360,6 +370,7 @@ struct sp_rule_output_params {
 	uint8_t dscp_remark;		/* DSCP remark */
 	uint8_t vlan_pcp_remark;	/* Vlan PCP remark */
 	uint32_t rule_id;		/* Rule ID */
+	uint8_t sawf_rule_type;		/* rule based flag*/
 };
 
 sp_mapdb_update_result_t sp_mapdb_rule_update(struct sp_rule *newrule);
