@@ -83,6 +83,10 @@
 #define SP_RULE_FLAG_MATCH_MSCS_TID_BITMAP		0x100000	/* MSCS Bitmap match*/
 #define SP_RULE_FLAG_MATCH_PRIORITY_LIMIT		0x200000	/* Priority Limit value*/
 #define	SP_RULE_FLAG_MATCH_IFINDEX			0x400000	/* Interface Index mask */
+#define	SP_RULE_FLAG_MATCH_SAWF_SRC_PORT_RANGE_START	0x800000	/* Match sawf source port range start */
+#define	SP_RULE_FLAG_MATCH_SAWF_SRC_PORT_RANGE_END	0x1000000	/* Match sawf source port range end */
+#define	SP_RULE_FLAG_MATCH_SAWF_DST_PORT_RANGE_START	0x2000000	/* Match sawf destination port range start */
+#define	SP_RULE_FLAG_MATCH_SAWF_DST_PORT_RANGE_END	0x4000000	/* Match sawf destination port range end */
 
 #define IPV6_ADDR_LEN		4
 
@@ -295,6 +299,26 @@ struct sp_rule_inner {
 	 * Interface Index
 	 */
 	uint8_t ifindex;
+
+	/*
+	 * Source port range start
+	 */
+	uint16_t src_port_range_start;
+
+	/*
+	 * Source port range end
+	 */
+	uint16_t src_port_range_end;
+
+	/*
+	 * Destination port range start
+	 */
+	uint16_t dst_port_range_start;
+
+	/*
+	 * Destination port range end
+	 */
+	uint16_t dst_port_range_end;
 };
 
 /*

@@ -703,6 +703,10 @@ static inline void sp_mapdb_rule_print_input_params(struct sp_mapdb_rule_node *c
 	printk("match pattern value: %x: match pattern mask: %x\n", curnode->rule.inner.match_pattern_value, curnode->rule.inner.match_pattern_mask);
 	printk("MSCS TID BITMAP: %x: Priority Limit Value: %x\n", curnode->rule.inner.mscs_tid_bitmap, curnode->rule.inner.priority_limit);
 	printk("Interface Index : %d\n", curnode->rule.inner.ifindex);
+	printk("src_port: 0x%x, dst_port: 0x%x, src_port_range_start: 0x%x, src_port_range_end: 0x%x, dst_port_range_start: 0x%x, dst_port_range_end: 0x%x\n",
+			curnode->rule.inner.src_port, curnode->rule.inner.dst_port, curnode->rule.inner.src_port_range_start,
+			curnode->rule.inner.src_port_range_end, curnode->rule.inner.dst_port_range_start,
+			curnode->rule.inner.dst_port_range_end);
 }
 
 /*
@@ -855,6 +859,20 @@ static inline bool sp_mapdb_rule_match_sawf(struct sp_rule *rule, struct sp_rule
 		}
 	}
 
+	if ((flags & SP_RULE_FLAG_MATCH_SAWF_DST_PORT_RANGE_START) && (flags & SP_RULE_FLAG_MATCH_SAWF_DST_PORT_RANGE_END)) {
+		DEBUG_INFO("Matching DST PORT RANGE..\n");
+		DEBUG_INFO("skb dst port = 0x%x\n", params->dst.port);
+		DEBUG_INFO("rule dst port range start = 0x%x\n", rule->inner.dst_port_range_start);
+		DEBUG_INFO("rule dst port range end = 0x%x\n", rule->inner.dst_port_range_end);
+
+		compare_result = ((params->dst.port >= rule->inner.dst_port_range_start) &&
+					(params->dst.port <= rule->inner.dst_port_range_end));
+		if (!compare_result) {
+			DEBUG_WARN("DST port range match failed!\n");
+			return false;
+		}
+	}
+
 	if (flags & SP_RULE_FLAG_MATCH_SAWF_DST_IPV4) {
 		DEBUG_INFO("Matching DST IP..\n");
 		DEBUG_INFO("Input dst ipv4 = %pI4", &params->dst.ip.ipv4_addr);
@@ -927,6 +945,20 @@ static inline bool sp_mapdb_rule_match_sawf(struct sp_rule *rule, struct sp_rule
 		compare_result = params->src.port == rule->inner.src_port;
 		if (!compare_result) {
 			DEBUG_WARN("SRC port match failed!\n");
+			return false;
+		}
+	}
+
+	if ((flags & SP_RULE_FLAG_MATCH_SAWF_SRC_PORT_RANGE_START) && (flags & SP_RULE_FLAG_MATCH_SAWF_SRC_PORT_RANGE_END)) {
+		DEBUG_INFO("Matching SRC PORT RANGE..\n");
+		DEBUG_INFO("skb src port = 0x%x\n", params->src.port);
+		DEBUG_INFO("rule src port range start = 0x%x\n", rule->inner.src_port_range_start);
+		DEBUG_INFO("rule src port range end = 0x%x\n", rule->inner.src_port_range_end);
+
+		compare_result = ((params->src.port >= rule->inner.src_port_range_start) &&
+					(params->src.port <= rule->inner.src_port_range_end));
+		if (!compare_result) {
+			DEBUG_WARN("SRC port range match failed!\n");
 			return false;
 		}
 	}
@@ -1463,6 +1495,43 @@ static inline int sp_mapdb_rule_receive(struct sk_buff *skb, struct genl_info *i
 		DEBUG_INFO("Priority limit: 0x%x\n", to_sawf_sp.inner.priority_limit);
 	}
 
+	if ((info->attrs[SP_GNL_ATTR_SRC_PORT_RANGE_START] && !(info->attrs[SP_GNL_ATTR_SRC_PORT_RANGE_END])) ||
+			(info->attrs[SP_GNL_ATTR_SRC_PORT_RANGE_END] && !(info->attrs[SP_GNL_ATTR_SRC_PORT_RANGE_START]))) {
+		rcu_read_unlock();
+		DEBUG_ERROR("Invalid input, please enter both start and end value for source port range\n");
+		rule_result = SP_MAPDB_UPDATE_RESULT_ERR_INVALIDENTRY;
+		goto status_notify;
+	}
+
+	if (info->attrs[SP_GNL_ATTR_SRC_PORT_RANGE_START] && info->attrs[SP_GNL_ATTR_SRC_PORT_RANGE_END]) {
+		to_sawf_sp.inner.src_port_range_start = nla_get_u16(info->attrs[SP_GNL_ATTR_SRC_PORT_RANGE_START]);
+		mask |= SP_RULE_FLAG_MATCH_SAWF_SRC_PORT_RANGE_START;
+		DEBUG_INFO("Source port range start: 0x%x\n", to_sawf_sp.inner.src_port_range_start);
+
+		to_sawf_sp.inner.src_port_range_end = nla_get_u16(info->attrs[SP_GNL_ATTR_SRC_PORT_RANGE_END]);
+		mask |= SP_RULE_FLAG_MATCH_SAWF_SRC_PORT_RANGE_END;
+		DEBUG_INFO("Source port range end: 0x%x\n", to_sawf_sp.inner.src_port_range_end);
+	}
+
+	if ((info->attrs[SP_GNL_ATTR_DST_PORT_RANGE_START] && !(info->attrs[SP_GNL_ATTR_DST_PORT_RANGE_END])) ||
+			(info->attrs[SP_GNL_ATTR_DST_PORT_RANGE_END] && !(info->attrs[SP_GNL_ATTR_DST_PORT_RANGE_START]))) {
+		rcu_read_unlock();
+		DEBUG_ERROR("Invalid input, please enter both start and end value for destination port range\n");
+		rule_result = SP_MAPDB_UPDATE_RESULT_ERR_INVALIDENTRY;
+		goto status_notify;
+	}
+
+	if (info->attrs[SP_GNL_ATTR_DST_PORT_RANGE_START] && info->attrs[SP_GNL_ATTR_DST_PORT_RANGE_END]) {
+		to_sawf_sp.inner.dst_port_range_start = nla_get_u16(info->attrs[SP_GNL_ATTR_DST_PORT_RANGE_START]);
+		mask |= SP_RULE_FLAG_MATCH_SAWF_DST_PORT_RANGE_START;
+		DEBUG_INFO("Destination port range start: 0x%x\n", to_sawf_sp.inner.dst_port_range_start);
+
+		to_sawf_sp.inner.dst_port_range_end = nla_get_u16(info->attrs[SP_GNL_ATTR_DST_PORT_RANGE_END]);
+		mask |= SP_RULE_FLAG_MATCH_SAWF_DST_PORT_RANGE_END;
+		DEBUG_INFO("Destination port range end: 0x%x\n", to_sawf_sp.inner.dst_port_range_end);
+	}
+
+
 	/*
 	 * Default classifier is SAWF, but if SCS rule is received, then classifier type will be
 	 * overwritten by SCS.
@@ -1593,7 +1662,11 @@ static inline int sp_mapdb_rule_query(struct sk_buff *skb, struct genl_info *inf
 	    nla_put_u32(msg, SP_GNL_ATTR_MATCH_PATTERN_MASK, rule.inner.match_pattern_mask) ||
 	    nla_put_u8(msg, SP_RULE_FLAG_MATCH_MSCS_TID_BITMAP, rule.inner.mscs_tid_bitmap) ||
 	    nla_put_u8(msg,  SP_RULE_FLAG_MATCH_PRIORITY_LIMIT, rule.inner.priority_limit) ||
-	    nla_put_u8(msg,  SP_RULE_FLAG_MATCH_IFINDEX, rule.inner.ifindex)) {
+	    nla_put_u8(msg,  SP_RULE_FLAG_MATCH_IFINDEX, rule.inner.ifindex) ||
+	    nla_put_u16(msg, SP_GNL_ATTR_SRC_PORT_RANGE_START, rule.inner.src_port_range_start) ||
+	    nla_put_u16(msg, SP_GNL_ATTR_SRC_PORT_RANGE_END, rule.inner.src_port_range_end) ||
+	    nla_put_u16(msg, SP_GNL_ATTR_DST_PORT_RANGE_START, rule.inner.dst_port_range_start) ||
+	    nla_put_u16(msg, SP_GNL_ATTR_DST_PORT_RANGE_END, rule.inner.dst_port_range_end)) {
 		goto put_failure;
 	}
 
@@ -1643,6 +1716,10 @@ static struct nla_policy sp_genl_policy[SP_GNL_MAX + 1] = {
 	[SP_GNL_ATTR_TID_BITMAP]		= { .type = NLA_U8, },
 	[SP_GNL_ATTR_PRIORITY_LIMIT]		= { .type = NLA_U8, },
 	[SP_GNL_ATTR_IFINDEX]			= { .type = NLA_U8, },
+	[SP_GNL_ATTR_SRC_PORT_RANGE_START]	= { .type = NLA_U16, },
+	[SP_GNL_ATTR_SRC_PORT_RANGE_END]	= { .type = NLA_U16, },
+	[SP_GNL_ATTR_DST_PORT_RANGE_START]	= { .type = NLA_U16, },
+	[SP_GNL_ATTR_DST_PORT_RANGE_END]	= { .type = NLA_U16, },
 };
 
 /* Spm generic netlink operations */
