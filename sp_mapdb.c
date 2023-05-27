@@ -134,8 +134,6 @@ static struct sp_mapdb_rule_id_hashentry *sp_mapdb_search_hashentry(uint32_t rul
 static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8_t rule_type)
 {
 	uint8_t newrule_precedence = newrule->rule_precedence;
-	uint8_t old_prec;
-	bool field_update;
 	struct sp_mapdb_rule_node *cur_rule_node = NULL;
 	struct sp_mapdb_rule_id_hashentry *cur_hashentry = NULL;
 	struct sp_mapdb_rule_node *new_rule_node;
@@ -229,8 +227,6 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 	/*
 	 * Fields other than rule_precedence can still be updated along with rule_precedence.
 	 */
-	old_prec = cur_rule_node->rule.rule_precedence;
-	field_update = memcmp(&cur_rule_node->rule.inner, &newrule->inner, sizeof(struct sp_rule_inner)) ? true : false;
 	DEBUG_INFO("%px:Success rule id=%d rule_type: %d\n", newrule, newrule->id, rule_type);
 	sp_mapdb_notifiers_call(newrule, SP_MAPDB_MODIFY_RULE);
 	call_rcu(&cur_rule_node->rcu, sp_rule_destroy_rcu);
