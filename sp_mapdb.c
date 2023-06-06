@@ -1683,7 +1683,76 @@ put_failure:
 	return -EMSGSIZE;
 }
 
+/*
+ * sp_mapdb_ruletable_flush_classifier_type()
+ * 	Handles a netlink message from userspace to flush rules
+ * 	based on classifier type from spm database.
+ */
+static inline int sp_mapdb_ruletable_flush_classifier_type(struct sk_buff *skb, struct genl_info *info)
+{
+	int i;
+	struct sp_mapdb_rule_node *node_list, *node, *tmp;
+	struct sp_mapdb_rule_id_hashentry *hashentry_iter;
+	struct hlist_node *hlist_tmp;
+	int hash_bkt;
+	uint8_t classifier_type;
+	struct hlist_head tmp_head_hashentry;
 
+	rcu_read_lock();
+
+	if (!info->attrs[SP_GNL_ATTR_CLASSIFIER_TYPE]) {
+		DEBUG_WARN("classifier type not selected by user, please select classifier type");
+		rcu_read_unlock();
+		return 0;
+	}
+
+	classifier_type = nla_get_u8(info->attrs[SP_GNL_ATTR_CLASSIFIER_TYPE]);
+	DEBUG_INFO("User requested flush rules with classifier type : %d\n", classifier_type);
+
+	rcu_read_unlock();
+
+	INIT_HLIST_HEAD(&tmp_head_hashentry);
+	spin_lock(&sp_mapdb_lock);
+	if (rule_manager.rule_count == 0) {
+		spin_unlock(&sp_mapdb_lock);
+		DEBUG_WARN("The rule table is already empty. No action needed. \n");
+		return 0;
+	}
+
+	for (i = 0; i < SP_MAPDB_RULE_MAX_PRECEDENCENUM; i++) {
+		node_list = &rule_manager.prec_map[i];
+
+		/*
+		 * tmp as a temporary pointer to store the address of next node.
+		 * This is required because we are using list_for_each_entry_safe,
+		 * which allows in-loop deletion of the node.
+		 */
+		list_for_each_entry_safe(node, tmp, &node_list->rule_list, rule_list) {
+			if (node->rule.classifier_type == classifier_type) {
+				list_del_rcu(&node->rule_list);
+				call_rcu(&node->rcu, sp_rule_destroy_rcu);
+			}
+		}
+	}
+
+	/* Free hash list. */
+	hash_for_each_safe(rule_manager.rule_id_hashmap, hash_bkt, hlist_tmp, hashentry_iter, hlist) {
+		if (hashentry_iter->rule_node->rule.classifier_type == classifier_type) {
+			hash_del(&hashentry_iter->hlist);
+			hlist_add_head(&hashentry_iter->hlist, &tmp_head_hashentry);
+			rule_manager.rule_count--;
+		}
+	}
+
+	spin_unlock(&sp_mapdb_lock);
+
+	hlist_for_each_entry_safe(hashentry_iter, hlist_tmp, &tmp_head_hashentry, hlist) {
+		hash_del(&hashentry_iter->hlist);
+		kfree(hashentry_iter);
+	}
+
+	return 0;
+}
 /*
  * sp_genl_policy
  * 	Policy attributes
@@ -1737,6 +1806,12 @@ static const struct genl_ops sp_genl_ops[] = {
 	{
 		.cmd = SPM_CMD_RULE_QUERY,
 		.doit = sp_mapdb_rule_query,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
+		.flags = GENL_ADMIN_PERM,
+	},
+	{
+		.cmd = SPM_CMD_RULE_FLUSH,
+		.doit = sp_mapdb_ruletable_flush_classifier_type,
 		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags = GENL_ADMIN_PERM,
 	},
