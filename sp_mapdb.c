@@ -1068,7 +1068,7 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 	uint8_t service_class_id = SP_RULE_INVALID_SERVICE_CLASS_ID;
 	uint8_t output = SP_MAPDB_USE_DSCP;
 	uint32_t rule_id = SP_RULE_INVALID_RULE_ID;
-	uint8_t sawf_rule_type = SAWF_RULE_TYPE_MAX;
+	uint8_t sawf_rule_type = SP_SAWF_RULE_TYPE_INVALID;
 
 	rcu_read_lock();
 	if (rule_manager.rule_count == 0) {
@@ -1099,7 +1099,7 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 					vlan_pcp_remark = curnode->rule.inner.vlan_pcp_remark;
 					service_class_id = curnode->rule.inner.service_class_id;
 					rule_id = curnode->rule.id;
-					sawf_rule_type = SAWF_RULE_TYPE_DEFAULT;
+					sawf_rule_type = SP_SAWF_RULE_TYPE_DEFAULT;
 					goto set_output;
 				}
 			}
@@ -1117,7 +1117,7 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 					vlan_pcp_remark = curnode->rule.inner.vlan_pcp_remark;
 					service_class_id = curnode->rule.inner.service_class_id;
 					rule_id = curnode->rule.id;
-					sawf_rule_type = SAWF_RULE_TYPE_SCS;
+					sawf_rule_type = SP_SAWF_RULE_TYPE_SCS;
 					goto set_output;
 				}
 			}

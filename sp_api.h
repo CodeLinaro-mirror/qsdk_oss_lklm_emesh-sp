@@ -378,10 +378,10 @@ struct sp_rule_input_params {
  * sawf_classifier_rule_type
  *      This enum defines rule classifier type for sawf classifier
  */
-enum sawf_classifier_rule_type {
-       SAWF_RULE_TYPE_DEFAULT,	/*Admin configured global SAWF rule*/
-       SAWF_RULE_TYPE_SCS,	/*Client specific SAWF rule configured via SCS procedure*/
-       SAWF_RULE_TYPE_MAX,	/*Max SAWF rule type*/
+enum sp_sawf_classifier_rule_type {
+       SP_SAWF_RULE_TYPE_DEFAULT,	/*Admin configured global SAWF rule*/
+       SP_SAWF_RULE_TYPE_SCS,		/*Client specific SAWF rule configured via SCS procedure*/
+       SP_SAWF_RULE_TYPE_INVALID,	/*Invalid SAWF rule type*/
 };
 
 /*
