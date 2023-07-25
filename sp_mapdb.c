@@ -134,8 +134,6 @@ static struct sp_mapdb_rule_id_hashentry *sp_mapdb_search_hashentry(uint32_t rul
 static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8_t rule_type)
 {
 	uint8_t newrule_precedence = newrule->rule_precedence;
-	uint8_t old_prec;
-	bool field_update;
 	struct sp_mapdb_rule_node *cur_rule_node = NULL;
 	struct sp_mapdb_rule_id_hashentry *cur_hashentry = NULL;
 	struct sp_mapdb_rule_node *new_rule_node;
@@ -229,8 +227,6 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 	/*
 	 * Fields other than rule_precedence can still be updated along with rule_precedence.
 	 */
-	old_prec = cur_rule_node->rule.rule_precedence;
-	field_update = memcmp(&cur_rule_node->rule.inner, &newrule->inner, sizeof(struct sp_rule_inner)) ? true : false;
 	DEBUG_INFO("%px:Success rule id=%d rule_type: %d\n", newrule, newrule->id, rule_type);
 	sp_mapdb_notifiers_call(newrule, SP_MAPDB_MODIFY_RULE);
 	call_rcu(&cur_rule_node->rcu, sp_rule_destroy_rcu);
@@ -585,6 +581,33 @@ set_output:
 }
 
 /*
+ * sp_mapdb_enum_to_char_ae_type()
+ * 	Convert ae type enum to string ae type.
+ */
+static const char* sp_mapdb_enum_to_char_ae_type(enum sp_rule_ae_type ae_type)
+{
+	switch (ae_type) {
+	case SP_RULE_AE_TYPE_DEFAULT:
+		return "default";
+
+	case SP_RULE_AE_TYPE_PPE:
+		return "ppe";
+
+	case SP_RULE_AE_TYPE_SFE:
+		return "sfe";
+
+	case SP_RULE_AE_TYPE_PPE_DS:
+		return "ppe-ds";
+
+	case SP_RULE_AE_TYPE_PPE_VP:
+		return "ppe-vp";
+
+	default:
+		return "none";
+	}
+}
+
+/*
  * sp_mapdb_ruletable_flush()
  * 	Clear the rule table and frees the memory allocated for the rules.
  *
@@ -729,6 +752,7 @@ void sp_mapdb_ruletable_print(void)
 				printk("dscp_remark: %d, vlan_pcp_remark: %d\n", curnode->rule.inner.dscp_remark, curnode->rule.inner.vlan_pcp_remark);
 				printk("output(priority): %d, service_class_id: %d\n", curnode->rule.inner.rule_output, curnode->rule.inner.service_class_id);
 				printk("MSCS TID BITMAP: %x: Priority Limit Value: %x\n", curnode->rule.inner.mscs_tid_bitmap, curnode->rule.inner.priority_limit);
+				printk("acceleration engine type: %s\n", sp_mapdb_enum_to_char_ae_type(curnode->rule.inner.ae_type));
 			}
 		}
 	}
@@ -1068,7 +1092,8 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 	uint8_t service_class_id = SP_RULE_INVALID_SERVICE_CLASS_ID;
 	uint8_t output = SP_MAPDB_USE_DSCP;
 	uint32_t rule_id = SP_RULE_INVALID_RULE_ID;
-	uint8_t sawf_rule_type = SAWF_RULE_TYPE_MAX;
+	enum sp_rule_ae_type ae_type = SP_RULE_AE_TYPE_NONE;
+	uint8_t sawf_rule_type = SP_SAWF_RULE_TYPE_INVALID;
 
 	rcu_read_lock();
 	if (rule_manager.rule_count == 0) {
@@ -1099,7 +1124,8 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 					vlan_pcp_remark = curnode->rule.inner.vlan_pcp_remark;
 					service_class_id = curnode->rule.inner.service_class_id;
 					rule_id = curnode->rule.id;
-					sawf_rule_type = SAWF_RULE_TYPE_DEFAULT;
+					ae_type = curnode->rule.inner.ae_type;
+					sawf_rule_type = SP_SAWF_RULE_TYPE_DEFAULT;
 					goto set_output;
 				}
 			}
@@ -1117,7 +1143,7 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 					vlan_pcp_remark = curnode->rule.inner.vlan_pcp_remark;
 					service_class_id = curnode->rule.inner.service_class_id;
 					rule_id = curnode->rule.id;
-					sawf_rule_type = SAWF_RULE_TYPE_SCS;
+					sawf_rule_type = SP_SAWF_RULE_TYPE_SCS;
 					goto set_output;
 				}
 			}
@@ -1132,6 +1158,7 @@ set_output:
 	rule_output->dscp_remark = dscp_remark;
 	rule_output->vlan_pcp_remark = vlan_pcp_remark;
 	rule_output->sawf_rule_type = sawf_rule_type;
+	rule_output->ae_type = ae_type;
 }
 EXPORT_SYMBOL(sp_mapdb_rule_apply_sawf);
 
@@ -1535,6 +1562,10 @@ static inline int sp_mapdb_rule_receive(struct sk_buff *skb, struct genl_info *i
 		DEBUG_INFO("Destination port range end: 0x%x\n", to_sawf_sp.inner.dst_port_range_end);
 	}
 
+	if (info->attrs[SP_GNL_ATTR_AE_TYPE]) {
+		to_sawf_sp.inner.ae_type = nla_get_u8(info->attrs[SP_GNL_ATTR_AE_TYPE]);
+		DEBUG_INFO("Ae type: 0x%x\n", to_sawf_sp.inner.ae_type);
+	}
 
 	/*
 	 * Default classifier is SAWF, but if SCS rule is received, then classifier type will be
@@ -1670,7 +1701,8 @@ static inline int sp_mapdb_rule_query(struct sk_buff *skb, struct genl_info *inf
 	    nla_put_u16(msg, SP_GNL_ATTR_SRC_PORT_RANGE_START, rule.inner.src_port_range_start) ||
 	    nla_put_u16(msg, SP_GNL_ATTR_SRC_PORT_RANGE_END, rule.inner.src_port_range_end) ||
 	    nla_put_u16(msg, SP_GNL_ATTR_DST_PORT_RANGE_START, rule.inner.dst_port_range_start) ||
-	    nla_put_u16(msg, SP_GNL_ATTR_DST_PORT_RANGE_END, rule.inner.dst_port_range_end)) {
+	    nla_put_u16(msg, SP_GNL_ATTR_DST_PORT_RANGE_END, rule.inner.dst_port_range_end) ||
+	    nla_put_u8(msg, SP_GNL_ATTR_AE_TYPE, rule.inner.ae_type)) {
 		goto put_failure;
 	}
 
@@ -1683,7 +1715,76 @@ put_failure:
 	return -EMSGSIZE;
 }
 
+/*
+ * sp_mapdb_ruletable_flush_classifier_type()
+ * 	Handles a netlink message from userspace to flush rules
+ * 	based on classifier type from spm database.
+ */
+static inline int sp_mapdb_ruletable_flush_classifier_type(struct sk_buff *skb, struct genl_info *info)
+{
+	int i;
+	struct sp_mapdb_rule_node *node_list, *node, *tmp;
+	struct sp_mapdb_rule_id_hashentry *hashentry_iter;
+	struct hlist_node *hlist_tmp;
+	int hash_bkt;
+	uint8_t classifier_type;
+	struct hlist_head tmp_head_hashentry;
 
+	rcu_read_lock();
+
+	if (!info->attrs[SP_GNL_ATTR_CLASSIFIER_TYPE]) {
+		DEBUG_WARN("classifier type not selected by user, please select classifier type");
+		rcu_read_unlock();
+		return 0;
+	}
+
+	classifier_type = nla_get_u8(info->attrs[SP_GNL_ATTR_CLASSIFIER_TYPE]);
+	DEBUG_INFO("User requested flush rules with classifier type : %d\n", classifier_type);
+
+	rcu_read_unlock();
+
+	INIT_HLIST_HEAD(&tmp_head_hashentry);
+	spin_lock(&sp_mapdb_lock);
+	if (rule_manager.rule_count == 0) {
+		spin_unlock(&sp_mapdb_lock);
+		DEBUG_WARN("The rule table is already empty. No action needed. \n");
+		return 0;
+	}
+
+	for (i = 0; i < SP_MAPDB_RULE_MAX_PRECEDENCENUM; i++) {
+		node_list = &rule_manager.prec_map[i];
+
+		/*
+		 * tmp as a temporary pointer to store the address of next node.
+		 * This is required because we are using list_for_each_entry_safe,
+		 * which allows in-loop deletion of the node.
+		 */
+		list_for_each_entry_safe(node, tmp, &node_list->rule_list, rule_list) {
+			if (node->rule.classifier_type == classifier_type) {
+				list_del_rcu(&node->rule_list);
+				call_rcu(&node->rcu, sp_rule_destroy_rcu);
+			}
+		}
+	}
+
+	/* Free hash list. */
+	hash_for_each_safe(rule_manager.rule_id_hashmap, hash_bkt, hlist_tmp, hashentry_iter, hlist) {
+		if (hashentry_iter->rule_node->rule.classifier_type == classifier_type) {
+			hash_del(&hashentry_iter->hlist);
+			hlist_add_head(&hashentry_iter->hlist, &tmp_head_hashentry);
+			rule_manager.rule_count--;
+		}
+	}
+
+	spin_unlock(&sp_mapdb_lock);
+
+	hlist_for_each_entry_safe(hashentry_iter, hlist_tmp, &tmp_head_hashentry, hlist) {
+		hash_del(&hashentry_iter->hlist);
+		kfree(hashentry_iter);
+	}
+
+	return 0;
+}
 /*
  * sp_genl_policy
  * 	Policy attributes
@@ -1724,6 +1825,7 @@ static struct nla_policy sp_genl_policy[SP_GNL_MAX + 1] = {
 	[SP_GNL_ATTR_SRC_PORT_RANGE_END]	= { .type = NLA_U16, },
 	[SP_GNL_ATTR_DST_PORT_RANGE_START]	= { .type = NLA_U16, },
 	[SP_GNL_ATTR_DST_PORT_RANGE_END]	= { .type = NLA_U16, },
+	[SP_GNL_ATTR_AE_TYPE]		= { .type = NLA_U8, },
 };
 
 /* Spm generic netlink operations */
@@ -1737,6 +1839,12 @@ static const struct genl_ops sp_genl_ops[] = {
 	{
 		.cmd = SPM_CMD_RULE_QUERY,
 		.doit = sp_mapdb_rule_query,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
+		.flags = GENL_ADMIN_PERM,
+	},
+	{
+		.cmd = SPM_CMD_RULE_FLUSH,
+		.doit = sp_mapdb_ruletable_flush_classifier_type,
 		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags = GENL_ADMIN_PERM,
 	},
