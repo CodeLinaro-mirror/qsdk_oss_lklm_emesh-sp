@@ -361,11 +361,14 @@ struct sp_rule_inner {
  * 	This enum defines rule classifier type
  */
 enum sp_rule_classifier_type {
+	SP_RULE_TYPE_SAWF_INVALID,	/* For invalid type */
 	SP_RULE_TYPE_MESH,	/* For non-sawf rule */
 	SP_RULE_TYPE_SAWF,	/* For SAWF rule */
 	SP_RULE_TYPE_SCS,	/* For SCS rule */
 	SP_RULE_TYPE_MSCS,	/* For MSCS rule */
 	SP_RULE_TYPE_SAWF_SCS,	/* For SAWF-SCS rule type */
+	SP_RULE_TYPE_SAWF_IFLI,	/* For IFLI rule type */
+	SP_RULE_TYPE_SAWF_MAX,	/* Max SP rule type */
 };
 
 /*
@@ -411,16 +414,6 @@ struct sp_rule_input_params {
 };
 
 /*
- * sawf_classifier_rule_type
- *      This enum defines rule classifier type for sawf classifier
- */
-enum sp_sawf_classifier_rule_type {
-       SP_SAWF_RULE_TYPE_DEFAULT,	/*Admin configured global SAWF rule*/
-       SP_SAWF_RULE_TYPE_SCS,		/*Client specific SAWF rule configured via SCS procedure*/
-       SP_SAWF_RULE_TYPE_INVALID,	/*Invalid SAWF rule type*/
-};
-
-/*
  * sp_rule_output_params
  * 	This structure lists output parameters from SPM to ECM
  */
@@ -432,6 +425,7 @@ struct sp_rule_output_params {
 	uint32_t rule_id;		/* Rule ID */
 	uint8_t sawf_rule_type;		/* rule based flag*/
 	enum sp_rule_ae_type ae_type;	/* acceleration engine mode */
+	uint32_t key;			/* Key to get hash bucket index*/
 };
 
 sp_mapdb_update_result_t sp_mapdb_rule_update(struct sp_rule *newrule);
@@ -441,10 +435,12 @@ void sp_mapdb_apply(struct sk_buff *skb, uint8_t *smac, uint8_t *dmac);
 void sp_mapdb_notifier_register(struct notifier_block *nb);
 void sp_mapdb_notifier_unregister(struct notifier_block *nb);
 void sp_mapdb_ruletable_flush(void);
+void sp_mapdb_ifli_rule_flush(uint32_t rule_id, uint32_t key);
 void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *params,
 			      struct sp_rule_output_params *rule_output);
 void sp_mapdb_apply_scs(struct sk_buff *skb, struct sp_rule_input_params *params,
 			      struct sp_rule_output_params *rule_output);
 void sp_mapdb_apply_mscs(struct sk_buff *skb, struct sp_rule_input_params *params,
 			      struct sp_rule_output_params *output);
+char *sp_mapdb_get_classifier_type_str(enum sp_rule_classifier_type type);
 #endif
