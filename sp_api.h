@@ -82,11 +82,13 @@
 #define	SP_RULE_FLAG_MATCH_SCS_SPI			0x80000		/* SCS SPI match mask*/
 #define SP_RULE_FLAG_MATCH_MSCS_TID_BITMAP		0x100000	/* MSCS Bitmap match*/
 #define SP_RULE_FLAG_MATCH_PRIORITY_LIMIT		0x200000	/* Priority Limit value*/
-#define	SP_RULE_FLAG_MATCH_IFINDEX			0x400000	/* Interface Index mask */
+#define	SP_RULE_FLAG_MATCH_DST_IFINDEX			0x400000	/* Destination Interface Index mask */
 #define	SP_RULE_FLAG_MATCH_SAWF_SRC_PORT_RANGE_START	0x800000	/* Match sawf source port range start */
 #define	SP_RULE_FLAG_MATCH_SAWF_SRC_PORT_RANGE_END	0x1000000	/* Match sawf source port range end */
 #define	SP_RULE_FLAG_MATCH_SAWF_DST_PORT_RANGE_START	0x2000000	/* Match sawf destination port range start */
 #define	SP_RULE_FLAG_MATCH_SAWF_DST_PORT_RANGE_END	0x4000000	/* Match sawf destination port range end */
+#define SP_RULE_FLAG_MATCH_SAWF_SRC_IFACE		0x8000000	/* Match sawf source interface */
+#define SP_RULE_FLAG_MATCH_SAWF_DST_IFACE		0x10000000	/* Match sawf destination interface */
 
 #define IPV6_ADDR_LEN		4
 
@@ -309,9 +311,9 @@ struct sp_rule_inner {
 	uint8_t priority_limit;
 
 	/*
-	 * Interface Index
+	 * Destination Interface Index
 	 */
-	uint8_t ifindex;
+	uint8_t dst_ifindex;
 
 	/*
 	 * Source port range start
@@ -337,6 +339,21 @@ struct sp_rule_inner {
 	 * Acceleration engine type
 	 */
 	enum sp_rule_ae_type ae_type;
+
+	/*
+	 * Source interface
+	 */
+	char src_iface[IFNAMSIZ];
+
+	/*
+	 * Destination interface
+	 */
+	char dst_iface[IFNAMSIZ];
+
+	/*
+	 * Source Interface Index
+	 */
+	uint8_t src_ifindex;
 };
 
 /*
@@ -388,8 +405,9 @@ struct sp_rule_input_params {
 	uint8_t dscp;				/* DSCP value */
 	uint8_t ip_version_type;		/* IP Version type */
 	uint16_t vlan_tci;			/* Vlan TCI */
-	uint8_t ifindex;			/* interface index */
+	uint8_t dst_ifindex;			/* Destination interface index */
 	uint8_t dev_addr[ETH_HLEN];		/* Netdevice address in case of WDS EXT case */
+	uint8_t src_ifindex;			/* Source Interface Index */
 };
 
 /*

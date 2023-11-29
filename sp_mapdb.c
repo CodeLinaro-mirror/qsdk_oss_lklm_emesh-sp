@@ -19,6 +19,7 @@
 #include <linux/kernel.h>
 #include <linux/netfilter.h>
 #include <linux/etherdevice.h>
+#include <linux/netdevice.h>
 #include <linux/if_vlan.h>
 #include <linux/version.h>
 #include <net/genetlink.h>
@@ -726,11 +727,12 @@ static inline void sp_mapdb_rule_print_input_params(struct sp_mapdb_rule_node *c
 	printk("src_ipv6_mask: %pI6: dst_ipv6_mask: %pI6\n", &curnode->rule.inner.src_ipv6_addr_mask, &curnode->rule.inner.dst_ipv6_addr_mask);
 	printk("match pattern value: %x: match pattern mask: %x\n", curnode->rule.inner.match_pattern_value, curnode->rule.inner.match_pattern_mask);
 	printk("MSCS TID BITMAP: %x: Priority Limit Value: %x\n", curnode->rule.inner.mscs_tid_bitmap, curnode->rule.inner.priority_limit);
-	printk("Interface Index : %d\n", curnode->rule.inner.ifindex);
+	printk("Destination Interface Index : %d\n", curnode->rule.inner.dst_ifindex);
 	printk("src_port: 0x%x, dst_port: 0x%x, src_port_range_start: 0x%x, src_port_range_end: 0x%x, dst_port_range_start: 0x%x, dst_port_range_end: 0x%x\n",
 			curnode->rule.inner.src_port, curnode->rule.inner.dst_port, curnode->rule.inner.src_port_range_start,
 			curnode->rule.inner.src_port_range_end, curnode->rule.inner.dst_port_range_start,
 			curnode->rule.inner.dst_port_range_end);
+	printk("Source Interface: %s Destination Interface: %s \n", curnode->rule.inner.src_iface, curnode->rule.inner.dst_iface);
 }
 
 /*
@@ -861,7 +863,7 @@ static inline bool sp_mapdb_rule_match_sawf(struct sp_rule *rule, struct sp_rule
 			 */
 			if (rule->classifier_type == SP_RULE_TYPE_SAWF_SCS) {
 				compare_result = ether_addr_equal(params->dev_addr, rule->inner.da) &&
-							(params->ifindex == rule->inner.ifindex);
+							(params->dst_ifindex == rule->inner.dst_ifindex);
 				if (!compare_result) {
 					DEBUG_WARN("Netdev address and device ID match failed!\n");
 					return false;
@@ -1071,6 +1073,28 @@ static inline bool sp_mapdb_rule_match_sawf(struct sp_rule *rule, struct sp_rule
 		compare_result = params->spi == rule->inner.match_pattern_value;
 		if (!compare_result) {
 			DEBUG_WARN("SPI match failed!\n");
+			return false;
+		}
+	}
+
+	if (flags & SP_RULE_FLAG_MATCH_SAWF_SRC_IFACE) {
+		DEBUG_INFO("Matching Src Interface..\n");
+		DEBUG_INFO("Input Src iface index = %d\n", params->src_ifindex);
+		DEBUG_INFO("rule match src iface index = %d\n",rule->inner.src_ifindex);
+		compare_result = params->src_ifindex == rule->inner.src_ifindex;
+		if (!compare_result) {
+			DEBUG_WARN("Source interface match failed!\n");
+			return false;
+		}
+	}
+
+	if (flags & SP_RULE_FLAG_MATCH_SAWF_DST_IFACE) {
+		DEBUG_INFO("Matching Dest Interface..\n");
+		DEBUG_INFO("Input Dest iface index = %d\n", params->dst_ifindex);
+		DEBUG_INFO("rule match Dest iface index = %d \n",rule->inner.dst_ifindex);
+		compare_result = params->dst_ifindex == rule->inner.dst_ifindex;
+		if (!compare_result) {
+			DEBUG_WARN("Destination interface match failed!\n");
 			return false;
 		}
 	}
@@ -1310,6 +1334,7 @@ static inline int sp_mapdb_rule_receive(struct sk_buff *skb, struct genl_info *i
 	int rule_result;
 	void *hdr = NULL;
 	struct sk_buff *msg = NULL;
+	struct net_device *dev;
 
 	/*
 	 * Set the invalid output values in rule to avoid these values to be set as 0's in
@@ -1512,9 +1537,9 @@ static inline int sp_mapdb_rule_receive(struct sk_buff *skb, struct genl_info *i
 		to_sawf_sp.inner.match_pattern_mask = nla_get_u32(info->attrs[SP_GNL_ATTR_MATCH_PATTERN_MASK]);
 	}
 
-	if (info->attrs[SP_GNL_ATTR_IFINDEX]) {
-		to_sawf_sp.inner.ifindex = nla_get_u8(info->attrs[SP_GNL_ATTR_IFINDEX]);
-		DEBUG_INFO("Interface Index: 0x%x\n", to_sawf_sp.inner.ifindex);
+	if (info->attrs[SP_GNL_ATTR_DST_IFINDEX]) {
+		to_sawf_sp.inner.dst_ifindex = nla_get_u8(info->attrs[SP_GNL_ATTR_DST_IFINDEX]);
+		DEBUG_INFO("Destination Interface Index: 0x%x\n", to_sawf_sp.inner.dst_ifindex);
 	}
 
 	if (info->attrs[SP_GNL_ATTR_TID_BITMAP]) {
@@ -1566,6 +1591,38 @@ static inline int sp_mapdb_rule_receive(struct sk_buff *skb, struct genl_info *i
 	if (info->attrs[SP_GNL_ATTR_AE_TYPE]) {
 		to_sawf_sp.inner.ae_type = nla_get_u8(info->attrs[SP_GNL_ATTR_AE_TYPE]);
 		DEBUG_INFO("Ae type: 0x%x\n", to_sawf_sp.inner.ae_type);
+	}
+
+	if (info->attrs[SP_GNL_ATTR_SRC_IFACE]) {
+		memcpy(to_sawf_sp.inner.src_iface, nla_data(info->attrs[SP_GNL_ATTR_SRC_IFACE]), IFNAMSIZ);
+		dev = dev_get_by_name(&init_net, to_sawf_sp.inner.src_iface);
+		if (!dev) {
+			rcu_read_unlock();
+			DEBUG_ERROR("Invalid input, please enter Valid Src Interface %s \n",to_sawf_sp.inner.src_iface);
+			rule_result = SP_MAPDB_UPDATE_RESULT_ERR_INVALIDENTRY;
+			goto status_notify;
+		}
+
+		to_sawf_sp.inner.src_ifindex = dev->ifindex;
+		dev_put(dev);
+		DEBUG_INFO("Source interface: %s Source interface index: %d \n", to_sawf_sp.inner.src_iface, to_sawf_sp.inner.src_ifindex);
+		mask |= SP_RULE_FLAG_MATCH_SAWF_SRC_IFACE;
+	}
+
+	if (info->attrs[SP_GNL_ATTR_DST_IFACE]) {
+		memcpy(to_sawf_sp.inner.dst_iface, nla_data(info->attrs[SP_GNL_ATTR_DST_IFACE]), IFNAMSIZ);
+		dev = dev_get_by_name(&init_net, to_sawf_sp.inner.dst_iface);
+		if (!dev) {
+			rcu_read_unlock();
+			DEBUG_ERROR("Invalid input, please enter Valid Destination Interface %s \n",to_sawf_sp.inner.dst_iface);
+			rule_result = SP_MAPDB_UPDATE_RESULT_ERR_INVALIDENTRY;
+			goto status_notify;
+		}
+
+		to_sawf_sp.inner.dst_ifindex = dev->ifindex;
+		dev_put(dev);
+		DEBUG_INFO("Destination interface: %s Destination Interface Index: %d \n", to_sawf_sp.inner.dst_iface, to_sawf_sp.inner.dst_ifindex);
+		mask |= SP_RULE_FLAG_MATCH_SAWF_DST_IFACE;
 	}
 
 	/*
@@ -1664,6 +1721,11 @@ static inline int sp_mapdb_rule_query(struct sk_buff *skb, struct genl_info *inf
 		goto put_failure;
 	}
 
+	if((nla_put(msg, SP_GNL_ATTR_SRC_IFACE, IFNAMSIZ, rule.inner.src_iface)) ||
+	(nla_put(msg, SP_GNL_ATTR_DST_IFACE, IFNAMSIZ, rule.inner.dst_iface))) {
+		goto put_failure;
+	}
+
 	memcpy(&saddr, rule.inner.src_ipv6_addr, sizeof(struct in6_addr));
 	memcpy(&daddr, rule.inner.dst_ipv6_addr, sizeof(struct in6_addr));
 
@@ -1698,7 +1760,7 @@ static inline int sp_mapdb_rule_query(struct sk_buff *skb, struct genl_info *inf
 	    nla_put_u32(msg, SP_GNL_ATTR_MATCH_PATTERN_MASK, rule.inner.match_pattern_mask) ||
 	    nla_put_u8(msg, SP_RULE_FLAG_MATCH_MSCS_TID_BITMAP, rule.inner.mscs_tid_bitmap) ||
 	    nla_put_u8(msg,  SP_RULE_FLAG_MATCH_PRIORITY_LIMIT, rule.inner.priority_limit) ||
-	    nla_put_u8(msg,  SP_RULE_FLAG_MATCH_IFINDEX, rule.inner.ifindex) ||
+	    nla_put_u8(msg,  SP_RULE_FLAG_MATCH_DST_IFINDEX, rule.inner.dst_ifindex) ||
 	    nla_put_u16(msg, SP_GNL_ATTR_SRC_PORT_RANGE_START, rule.inner.src_port_range_start) ||
 	    nla_put_u16(msg, SP_GNL_ATTR_SRC_PORT_RANGE_END, rule.inner.src_port_range_end) ||
 	    nla_put_u16(msg, SP_GNL_ATTR_DST_PORT_RANGE_START, rule.inner.dst_port_range_start) ||
@@ -1821,12 +1883,14 @@ static struct nla_policy sp_genl_policy[SP_GNL_MAX + 1] = {
 	[SP_GNL_ATTR_MATCH_PATTERN_MASK]		= { .type = NLA_U32, },
 	[SP_GNL_ATTR_TID_BITMAP]		= { .type = NLA_U8, },
 	[SP_GNL_ATTR_PRIORITY_LIMIT]		= { .type = NLA_U8, },
-	[SP_GNL_ATTR_IFINDEX]			= { .type = NLA_U8, },
+	[SP_GNL_ATTR_DST_IFINDEX]		= { .type = NLA_U8, },
 	[SP_GNL_ATTR_SRC_PORT_RANGE_START]	= { .type = NLA_U16, },
 	[SP_GNL_ATTR_SRC_PORT_RANGE_END]	= { .type = NLA_U16, },
 	[SP_GNL_ATTR_DST_PORT_RANGE_START]	= { .type = NLA_U16, },
 	[SP_GNL_ATTR_DST_PORT_RANGE_END]	= { .type = NLA_U16, },
 	[SP_GNL_ATTR_AE_TYPE]		= { .type = NLA_U8, },
+	[SP_GNL_ATTR_SRC_IFACE]		= { .type = NLA_NUL_STRING, },
+	[SP_GNL_ATTR_DST_IFACE]		= { .type = NLA_NUL_STRING, },
 };
 
 /* Spm generic netlink operations */
