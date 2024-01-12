@@ -43,6 +43,7 @@ enum sp_gnl_cmds {
 	SPM_CMD_RULE_ACTION,
 	SPM_CMD_RULE_QUERY,
 	SPM_CMD_RULE_FLUSH,
+	SPM_CMD_RULE_QUERY_BY_TYPE,
 	SPM_CMD_MAX,
 };
 
@@ -107,6 +108,17 @@ enum sp_mapdb_rule_output_types {
 typedef enum sp_mapdb_rule_output_types sp_mapdb_rule_output_type_t;
 
 /*
+ * sp_mapdb_5tuple
+ */
+struct sp_mapdb_5tuple {
+	uint32_t dest_addr[4];		/* Destination IP. */
+	uint32_t src_addr[4];		/* Source IP. */
+	uint16_t dest_port;		/* Destination L4 port. */
+	uint16_t src_port;		/* Source L4 port. */
+	uint8_t protocol;		/* Outer protocol. */
+};
+
+/*
  * sp_mapdb_rule_node
  * 	This is an element in the double linked list pointed by prec_map[i].
  */
@@ -146,9 +158,9 @@ struct sp_mapdb_rule_manager {
 	struct sp_mapdb_rule_node prec_map[SP_MAPDB_RULE_MAX_PRECEDENCENUM];	/* Stores all the rules with precedence. */
 
 	/*
-	 * A Linux hlist structure storing SP_MAXPDB_RULE_MAX hash buckets.
+	 * A Linux hlist structure storing SP_MAPDB_RULE_MAX hash buckets.
 	 */
-	struct hlist_head rule_id_hashmap[SP_MAPDB_RULE_MAX];			/* Rule id hash map. */
+	struct hlist_head rule_hashmap[SP_MAPDB_RULE_MAX];			/* Rule id hash map. */
 	int rule_count;								/* The number of rules. */
 };
 
