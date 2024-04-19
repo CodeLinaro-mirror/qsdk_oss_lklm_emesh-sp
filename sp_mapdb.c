@@ -601,6 +601,19 @@ static void sp_mapdb_get_tuple(struct sp_rule *rule, struct sp_mapdb_5tuple *tup
 }
 
 /*
+ * sp_mapdb_is_base_ae_ppe()
+ *	Returns if base AE is PPE
+ */
+static int sp_mapdb_is_base_ae_ppe(struct sp_rule *rule)
+{
+	if (rule->inner.ae_type == SP_RULE_AE_TYPE_PPE_VP || rule->inner.ae_type == SP_RULE_AE_TYPE_PPE_DS) {
+		return true;
+	}
+
+	return false;
+}
+
+/*
  * sp_mapdb_rule_add()
  * 	Adds (or modifies) the SP rule in the rule table.
  *
@@ -618,6 +631,16 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 	struct sp_mapdb_rule_id_hashentry *new_hashentry;
 	struct sp_mapdb_5tuple tuple = {0};
 	newrule->key = SP_RULE_INVALID_RULE_ID;
+
+	/*
+	 * An IFLI rule with PPE AE must be a background flow
+	 * there is no need to maintain these rules, but ECM
+	 * will still be notified in case AE switch is necessary
+	 */
+	if (sp_mapdb_is_base_ae_ppe(newrule) && rule_type == SP_RULE_TYPE_SAWF_IFLI) {
+		sp_mapdb_notifiers_call(newrule, SP_MAPDB_ADD_RULE);
+		return SP_MAPDB_UPDATE_RESULT_SUCCESS_ADD;
+	}
 
 	DEBUG_INFO("%px: Try adding rule id = %d with rule_type: %d\n", newrule, newrule->id, rule_type);
 
