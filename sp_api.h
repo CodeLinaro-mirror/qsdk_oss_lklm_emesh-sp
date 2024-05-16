@@ -434,6 +434,21 @@ struct sp_rule_output_params {
 	uint16_t ipv4_frag_thresh;	/* Threshold size to initiate fragmentation */
 };
 
+/*
+ * sp_rule_del_params
+ *	This structure contains parameters necessary to delete tuple based rules
+ */
+struct sp_rule_del_params {
+	uint32_t rule_id;		/* Rule ID */
+	uint32_t key;			/* Key to get hash bucket index */
+	uint32_t src_ip[4];		/* Source IP Address */
+	uint32_t dest_ip[4];		/* Destination IP Address */
+	uint16_t src_port;		/* Source Port */
+	uint16_t dest_port;		/* Destination Port */
+	int protocol;			/* Protocl number */
+	int ip_version;			/* IP version */
+};
+
 sp_mapdb_update_result_t sp_mapdb_rule_update(struct sp_rule *newrule);
 
 void sp_mapdb_get_wlan_latency_params(struct sk_buff *skb, uint8_t *service_interval_dl, uint32_t *burst_size_dl, uint8_t *service_interval_ul, uint32_t *burst_size_ul, uint8_t *smac, uint8_t *dmac);
@@ -441,7 +456,7 @@ void sp_mapdb_apply(struct sk_buff *skb, uint8_t *smac, uint8_t *dmac);
 void sp_mapdb_notifier_register(struct notifier_block *nb);
 void sp_mapdb_notifier_unregister(struct notifier_block *nb);
 void sp_mapdb_ruletable_flush(void);
-void sp_mapdb_ifli_rule_flush(uint32_t rule_id, uint32_t key);
+void sp_mapdb_ifli_rule_flush(struct sp_rule_del_params *del_params);
 void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *params,
 			      struct sp_rule_output_params *rule_output);
 void sp_mapdb_apply_scs(struct sk_buff *skb, struct sp_rule_input_params *params,
