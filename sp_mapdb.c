@@ -53,6 +53,12 @@ static struct genl_family sp_genl_family;
 static RAW_NOTIFIER_HEAD(sp_mapdb_notifier_chain);
 
 /*
+ * Structures for sync msg
+ */
+struct net *sync_msg_net;
+unsigned int port_id;
+
+/*
  * sp_mapdb_get_hash
  * 	Return hash value for 5 tuple
  */
@@ -1071,6 +1077,46 @@ set_output:
 
 	return output;
 }
+
+/*
+ * sp_mapdb_rm_sync
+ *	Syncs a flow's prioritization information with RM
+ */
+int sp_mapdb_rm_sync(struct sp_rm_sync_msg *rm_msg)
+{
+	struct sk_buff *msg;
+	void *hdr;
+
+	if (!sync_msg_net || !port_id) {
+		DEBUG_WARN("Sync socket is not setup\n");
+		return -EINVAL;
+	}
+
+	/*
+	 * An atomic message must be allocated as this funciton
+	 * may be called from an interupt context
+	 */
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_ATOMIC);
+	if (!msg) {
+		DEBUG_WARN("Failed to allocate netlink message to accomodate rule\n");
+		return -ENOMEM;
+	}
+
+	hdr = genlmsg_put(msg, port_id, 0,
+			&sp_genl_family, 0, SPM_CMD_RULE_ACTION);
+
+	if (!hdr) {
+		DEBUG_WARN("Failed to put hdr in netlink buffer\n");
+		nlmsg_free(msg);
+		return -ENOMEM;
+	}
+
+	nla_put(msg, SP_GNL_ATTR_RM_SYNC_MSG, sizeof(struct sp_rm_sync_msg), rm_msg);
+
+	return genlmsg_unicast(sync_msg_net, msg, port_id);
+}
+
+EXPORT_SYMBOL(sp_mapdb_rm_sync);
 
 /*
  * sp_mapdb_enum_to_char_ae_type()
@@ -2803,6 +2849,30 @@ static inline int sp_mapdb_ruletable_flush_classifier_type(struct sk_buff *skb, 
 
 	return 0;
 }
+
+/*
+ * sp_mapdb_rule_sync_socket_init
+ *	Initialized a global pointer with a socket value which will be used
+ *	to send sync messages via netlink
+ */
+static inline int sp_mapdb_rule_sync_socket_init(struct sk_buff *skb, struct genl_info *info)
+{
+	sync_msg_net = genl_info_net(info);
+	port_id = info->snd_portid;
+	return 0;
+}
+
+/*
+ * sp_mapdb_rule_sync_socket_exit
+ *	Reset global variables used for sync message
+ */
+static inline int sp_mapdb_rule_sync_socket_exit(struct sk_buff *skb, struct genl_info *info)
+{
+	sync_msg_net = NULL;
+	port_id = 0;
+	return 0;
+}
+
 /*
  * sp_genl_policy
  * 	Policy attributes
@@ -2867,6 +2937,7 @@ static struct nla_policy sp_genl_policy[SP_GNL_MAX + 1] = {
 	[SP_GNL_ATTR_SSID]		= { .type = NLA_NUL_STRING, },
 	[SP_GNL_ATTR_ACCESS_CLASS]		= { .type = NLA_U8, },
 	[SP_GNL_ATTR_PRIORITY]		= { .type = NLA_U8, },
+	[SP_GNL_ATTR_RM_SYNC_MSG]		= { .len = sizeof(struct sp_rm_sync_msg) },
 };
 
 /* Spm generic netlink operations */
@@ -2892,6 +2963,18 @@ static const struct genl_ops sp_genl_ops[] = {
 	{
 		.cmd = SPM_CMD_RULE_QUERY_BY_TYPE,
 		.doit = sp_mapdb_rule_query_by_type,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
+		.flags = GENL_ADMIN_PERM,
+	},
+	{
+		.cmd = SPM_CMD_SYNC_INIT,
+		.doit = sp_mapdb_rule_sync_socket_init,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
+		.flags = GENL_ADMIN_PERM,
+	},
+	{
+		.cmd = SPM_CMD_SYNC_EXIT,
+		.doit = sp_mapdb_rule_sync_socket_exit,
 		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags = GENL_ADMIN_PERM,
 	},

@@ -172,6 +172,16 @@ enum sp_mapdb_notify_types {
 typedef enum sp_mapdb_notify_types sp_mapdb_notify_type_t;
 
 /*
+ * sp_mapdb_prioritization_sync_types
+ * 	Types of notification.
+ */
+enum sp_mapdb_prioritization_sync_types {
+	SP_MAPDB_SYNC_PRIORITIZED,			/* Flow is prioritized for the first time */
+	SP_MAPDB_SYNC_UPDATED,				/* Flow priotization is updated. */
+	SP_MAPDB_SYNC_DEPRIORITIZED,			/* Flow is deprioritized */
+};
+
+/*
  * sp_mapdb_add_remove_filter_types
  * 	Possible value of Add-remove filter bit.
  */
@@ -653,6 +663,24 @@ int sp_mapdb_wifi_plugin_validate_wlan_rule_cb_register(struct emesh_sp_wifi_saw
  */
 void sp_mapdb_wifi_plugin_validate_wlan_rule_cb_unregister(void);
 
+/*
+ * sp_rm_sync_msg
+ *	This structure repressents the msg contents of a msg sent from ECM to RM
+ */
+struct __attribute__((__packed__)) sp_rm_sync_msg {
+	uint8_t flow_sid;		/* Flow Service class ID */
+	uint8_t return_sid;		/* Return Service class ID */
+	uint32_t src_ip[4];		/* Src IP Addr */
+	uint32_t dst_ip[4];		/* Dst IP Addr */
+	uint16_t src_port;		/* Src Port */
+	uint16_t dst_port;		/* Dst Port */
+	uint16_t protocol;		/* Protocol number */
+	uint8_t ip_version;		/* IPv4 or IPv6 */
+	uint8_t src_mac[6];		/* Src Mac Addr */
+	uint8_t dst_mac[6];		/* Dst Mac Addr */
+	uint8_t sync_type;		/* Is this due to flow being priorited, updated, or deprioritized */
+};
+
 sp_mapdb_update_result_t sp_mapdb_rule_update(struct sp_rule *newrule);
 
 void sp_mapdb_get_wlan_latency_params(struct sk_buff *skb, uint8_t *service_interval_dl, uint32_t *burst_size_dl, uint8_t *service_interval_ul, uint32_t *burst_size_ul, uint8_t *smac, uint8_t *dmac);
@@ -663,6 +691,7 @@ void sp_mapdb_ruletable_flush(void);
 void sp_mapdb_ifli_rule_flush(struct sp_rule_del_params *del_params);
 void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *params,
 			      struct sp_rule_output_params *rule_output);
+int sp_mapdb_rm_sync(struct sp_rm_sync_msg *rm_msg);
 void sp_mapdb_apply_scs(struct sk_buff *skb, struct sp_rule_input_params *params,
 			      struct sp_rule_output_params *rule_output);
 void sp_mapdb_apply_mscs(struct sk_buff *skb, struct sp_rule_input_params *params,
