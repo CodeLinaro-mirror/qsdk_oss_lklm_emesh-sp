@@ -377,6 +377,7 @@ enum sp_rule_classifier_type {
  */
 struct sp_rule {
 	u_int32_t id;						/* Service prioritization rule identifier */
+	u_int32_t key;						/* Key for IFLI cases. */
 	sp_mapdb_add_remove_filter_type_t cmd;			/* Command type. 1 means add 0 means delete. */
 	struct sp_rule_inner inner;				/* Inner structure */
 	uint8_t rule_precedence;				/* Rule precedence – higher number means higher priority. */

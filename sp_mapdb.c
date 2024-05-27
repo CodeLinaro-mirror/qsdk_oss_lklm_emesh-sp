@@ -508,6 +508,7 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 	struct sp_mapdb_rule_node *new_rule_node;
 	struct sp_mapdb_rule_id_hashentry *new_hashentry;
 	struct sp_mapdb_5tuple tuple = {0};
+	newrule->key = SP_RULE_INVALID_RULE_ID;
 
 	DEBUG_INFO("%px: Try adding rule id = %d with rule_type: %d\n", newrule, newrule->id, rule_type);
 
@@ -590,6 +591,8 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 		DEBUG_INFO("%px:Success rule id=%d with rule_type: %d\n",
 			   newrule, newrule->id, rule_type);
 
+		newrule->key = key;
+
 		/*
 		 * Since this is inserting a new rule, the old precendence
 		 * and field update do not possess any meaning.
@@ -614,6 +617,7 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 		sp_mapdb_notifiers_call(newrule, SP_MAPDB_MODIFY_RULE);
 
 		call_rcu(&cur_rule_node->rcu, sp_rule_destroy_rcu);
+		newrule->key = key;
 
 		return SP_MAPDB_UPDATE_RESULT_SUCCESS_MODIFY;
 	}
@@ -621,6 +625,7 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 	list_del_rcu(&cur_rule_node->rule_list);
 	list_add_rcu(&new_rule_node->rule_list, &rule_manager.prec_map[newrule_precedence].rule_list);
 	cur_hashentry->rule_node = new_rule_node;
+	newrule->key = key;
 	spin_unlock(&sp_mapdb_lock);
 
 	/*
@@ -1265,7 +1270,6 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 	uint32_t rule_id = SP_RULE_INVALID_RULE_ID;
 	uint8_t sawf_rule_type = SP_RULE_TYPE_SAWF_INVALID;
 	enum sp_rule_ae_type ae_type = SP_RULE_AE_TYPE_DEFAULT;
-	uint32_t key = SP_RULE_INVALID_RULE_ID;
 
 	rcu_read_lock();
 	if (rule_manager.rule_count == 0) {
@@ -1330,7 +1334,7 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 		rule_id = rule->rule.id;
 		sawf_rule_type = SP_RULE_TYPE_SAWF_IFLI;
 		ae_type = rule->rule.inner.ae_type;
-		rule_output->key = key;
+		rule_output->key = rule->rule.key;
 		goto set_output;
 	}
 
