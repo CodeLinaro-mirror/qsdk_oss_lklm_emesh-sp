@@ -540,6 +540,11 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 	 * Update the key for IFLI rule type
 	 */
 	if (rule_type == SP_RULE_TYPE_SAWF_IFLI) {
+		if (newrule->id != SP_RULE_INVALID_RULE_ID && newrule->id) {
+			DEBUG_ERROR("%px:IFLI rule must be pushed without rule ID\n", newrule);
+			return SP_MAPDB_UPDATE_RESULT_ERR;
+		}
+
 		if (newrule->inner.flags_sawf & SP_RULE_FLAG_MATCH_SAWF_SRC_IPV6) {
 			tuple.src_addr[0] = newrule->inner.src_ipv6_addr[0];
 			tuple.src_addr[1] = newrule->inner.src_ipv6_addr[1];
