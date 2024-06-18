@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  *
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -99,6 +99,7 @@
 #define	SP_RULE_INVALID_VLAN_TCI		0xFFFF		/* Invalid vlan tci */
 #define	SP_RULE_INVALID_PRIORITY		0xFF		/* Invalid Priority value */
 #define SP_RULE_INVALID_MSCS_TID_BITMAP		0x00		/* Invalid MSCS Bitmap */
+#define SP_RULE_INVALID_IPV4_FRAG_THRESH        0x00            /* Invalid fragmentation threshold */
 
 /*
  * sp_mapdb_update_results
@@ -193,7 +194,7 @@ struct sp_rule_inner {
 	 * If “match destination mac address” flag
 	 * bit is set, this field shall be included,
 	 * otherwise this field shall be omitted.
-	*/
+	 */
 	uint8_t da[ETH_ALEN];
 
 	/*
@@ -264,7 +265,6 @@ struct sp_rule_inner {
 	 * Service class id
 	 */
 	uint8_t service_class_id;
-
 	/*
 	 * Source ipv4 address mask
 	 */
@@ -354,6 +354,10 @@ struct sp_rule_inner {
 	 * Source Interface Index
 	 */
 	uint8_t src_ifindex;
+	/*
+	 * Threshold size to initiate fragmentation
+	 */
+	uint16_t ipv4_frag_thresh;
 };
 
 /*
@@ -427,6 +431,7 @@ struct sp_rule_output_params {
 	uint8_t sawf_rule_type;		/* rule based flag*/
 	enum sp_rule_ae_type ae_type;	/* acceleration engine mode */
 	uint32_t key;			/* Key to get hash bucket index*/
+	uint16_t ipv4_frag_thresh;	/* Threshold size to initiate fragmentation */
 };
 
 sp_mapdb_update_result_t sp_mapdb_rule_update(struct sp_rule *newrule);

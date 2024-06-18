@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  *
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -121,7 +121,7 @@ static inline bool sp_mapdb_rule_match_sawf(struct sp_rule *rule, struct sp_rule
 			/*
 			 * If the rule is sawf-scs or legacy scs type, then we further check for
 			 * mac address of the netdevice interfaces.
-			 */                  
+			 */
 			if (flags & SP_RULE_FLAG_MATCH_DST_IFINDEX) {
 				compare_result = ether_addr_equal(params->dev_addr, rule->inner.da) &&
 					(params->dst_ifindex == rule->inner.dst_ifindex);
@@ -131,7 +131,7 @@ static inline bool sp_mapdb_rule_match_sawf(struct sp_rule *rule, struct sp_rule
 				DEBUG_WARN("Netdev address and device ID match failed!\n");
 				return false;
 			}
-		} 
+		}
 	}
 
 	if (flags & SP_RULE_FLAG_MATCH_SAWF_DST_PORT) {
@@ -1182,7 +1182,7 @@ void sp_mapdb_ruletable_print(void)
 				sp_mapdb_rule_print_input_params(curnode);
 				printk("\n........OUTPUT PARAMS........\n");
 				printk("dscp_remark: %d, vlan_pcp_remark: %d\n", curnode->rule.inner.dscp_remark, curnode->rule.inner.vlan_pcp_remark);
-				printk("output(priority): %d, service_class_id: %d\n", curnode->rule.inner.rule_output, curnode->rule.inner.service_class_id);
+				printk("output(priority): %d, service_class_id: %d\n ipv4_frag_thresh: %d\n", curnode->rule.inner.rule_output, curnode->rule.inner.service_class_id, curnode->rule.inner.ipv4_frag_thresh);
 				printk("MSCS TID BITMAP: %x: Priority Limit Value: %x\n", curnode->rule.inner.mscs_tid_bitmap, curnode->rule.inner.priority_limit);
 				printk("acceleration engine type: %s\n", sp_mapdb_enum_to_char_ae_type(curnode->rule.inner.ae_type));
 			}
@@ -1275,6 +1275,7 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 	uint32_t rule_id = SP_RULE_INVALID_RULE_ID;
 	uint8_t sawf_rule_type = SP_RULE_TYPE_SAWF_INVALID;
 	enum sp_rule_ae_type ae_type = SP_RULE_AE_TYPE_DEFAULT;
+	uint16_t ipv4_frag_thresh = SP_RULE_INVALID_IPV4_FRAG_THRESH;
 
 	rcu_read_lock();
 	if (rule_manager.rule_count == 0) {
@@ -1302,6 +1303,7 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 					dscp_remark = curnode->rule.inner.dscp_remark;
 					vlan_pcp_remark = curnode->rule.inner.vlan_pcp_remark;
 					service_class_id = curnode->rule.inner.service_class_id;
+					ipv4_frag_thresh = curnode->rule.inner.ipv4_frag_thresh;
 					rule_id = curnode->rule.id;
 					ae_type = curnode->rule.inner.ae_type;
 					sawf_rule_type = SP_RULE_TYPE_SAWF;
@@ -1345,6 +1347,7 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 
 set_output:
 	rule_output->service_class_id = service_class_id;
+	rule_output->ipv4_frag_thresh = ipv4_frag_thresh;
 	rule_output->rule_id = rule_id;
 	rule_output->priority = output;
 	rule_output->dscp_remark = dscp_remark;
@@ -1513,6 +1516,7 @@ static inline int sp_mapdb_rule_receive(struct sk_buff *skb, struct genl_info *i
 	to_sawf_sp.inner.dscp_remark = SP_RULE_INVALID_DSCP_REMARK;
 	to_sawf_sp.inner.vlan_pcp_remark = SP_RULE_INVALID_VLAN_PCP_REMARK;
 	to_sawf_sp.inner.mscs_tid_bitmap = SP_RULE_INVALID_MSCS_TID_BITMAP;
+	to_sawf_sp.inner.ipv4_frag_thresh = SP_RULE_INVALID_IPV4_FRAG_THRESH;
 
 	rcu_read_lock();
 	DEBUG_INFO("Recieved rule...\n");
@@ -1557,6 +1561,11 @@ static inline int sp_mapdb_rule_receive(struct sk_buff *skb, struct genl_info *i
 	if (info->attrs[SP_GNL_ATTR_SERVICE_CLASS_ID]) {
 		to_sawf_sp.inner.service_class_id = nla_get_u8(info->attrs[SP_GNL_ATTR_SERVICE_CLASS_ID]);
 		DEBUG_INFO("Service_class_id: 0x%x\n", to_sawf_sp.inner.service_class_id);
+	}
+
+	if (info->attrs[SP_GNL_ATTR_IPV4_FRAG_THRESH]) {
+		to_sawf_sp.inner.ipv4_frag_thresh = nla_get_u16(info->attrs[SP_GNL_ATTR_IPV4_FRAG_THRESH]);
+		DEBUG_INFO("IPv4_frag_thresh: %d\n", to_sawf_sp.inner.ipv4_frag_thresh);
 	}
 
 	if (info->attrs[SP_GNL_ATTR_SRC_PORT]) {
@@ -1964,6 +1973,7 @@ static inline int sp_mapdb_rule_query(struct sk_buff *skb, struct genl_info *inf
 	    nla_put_u8(msg, SP_GNL_ATTR_VLAN_PCP, rule.inner.vlan_pcp) ||
 	    nla_put_u8(msg, SP_GNL_ATTR_VLAN_PCP_REMARK, rule.inner.vlan_pcp_remark) ||
 	    nla_put_u8(msg, SP_GNL_ATTR_SERVICE_CLASS_ID, rule.inner.service_class_id) ||
+	    nla_put_u16(msg, SP_GNL_ATTR_IPV4_FRAG_THRESH, rule.inner.ipv4_frag_thresh) ||
 	    nla_put_u8(msg, SP_GNL_ATTR_IP_VERSION_TYPE, rule.inner.ip_version_type) ||
 	    nla_put_u32(msg, SP_GNL_ATTR_MATCH_PATTERN_VALUE, rule.inner.match_pattern_value) ||
 	    nla_put_u32(msg, SP_GNL_ATTR_MATCH_PATTERN_MASK, rule.inner.match_pattern_mask) ||
@@ -2089,6 +2099,7 @@ static inline int sp_mapdb_rule_query_by_type(struct sk_buff *skb, struct genl_i
 				    nla_put_u8(msg, SP_GNL_ATTR_VLAN_PCP, rule.inner.vlan_pcp) ||
 				    nla_put_u8(msg, SP_GNL_ATTR_VLAN_PCP_REMARK, rule.inner.vlan_pcp_remark) ||
 				    nla_put_u8(msg, SP_GNL_ATTR_SERVICE_CLASS_ID, rule.inner.service_class_id) ||
+				    nla_put_u16(msg, SP_GNL_ATTR_IPV4_FRAG_THRESH, rule.inner.ipv4_frag_thresh) ||
 				    nla_put_u8(msg, SP_GNL_ATTR_IP_VERSION_TYPE, rule.inner.ip_version_type) ||
 				    nla_put_u32(msg, SP_GNL_ATTR_MATCH_PATTERN_VALUE, rule.inner.match_pattern_value) ||
 				    nla_put_u32(msg, SP_GNL_ATTR_MATCH_PATTERN_MASK, rule.inner.match_pattern_mask) ||
@@ -2235,6 +2246,7 @@ static struct nla_policy sp_genl_policy[SP_GNL_MAX + 1] = {
 	[SP_GNL_ATTR_BURST_SIZE_DL]		= { .type = NLA_U32, },
 	[SP_GNL_ATTR_BURST_SIZE_UL]		= { .type = NLA_U32, },
 	[SP_GNL_ATTR_SENSE_MESH_FLAG_IN]		= { .type = NLA_U32, },
+	[SP_GNL_ATTR_IPV4_FRAG_THRESH]          = { .type = NLA_U16, },
 };
 
 /* Spm generic netlink operations */
