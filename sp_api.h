@@ -102,6 +102,29 @@
 #define SP_RULE_INVALID_IPV4_FRAG_THRESH        0x00            /* Invalid fragmentation threshold */
 
 /*
+ * Radio bands
+ */
+#define SP_RULE_RADIO_BAND_2G	0x01	/* Band 2G */
+#define SP_RULE_RADIO_BAND_5G	0x02	/* Band 5G */
+#define SP_RULE_RADIO_BAND_5GH	0x04	/* Band 5GH */
+#define SP_RULE_RADIO_BAND_5GL	0x08	/* Band 5GL */
+#define SP_RULE_RADIO_BAND_6G	0x10	/* Band 6G */
+
+/*
+ * Radio bandwidth
+ */
+#define SP_RULE_RADIO_BANDWIDTH_20	0x01	/* Bandwidth 20Mhz */
+#define SP_RULE_RADIO_BANDWIDTH_40	0x02	/* Bandwidth 40Mhz */
+#define SP_RULE_RADIO_BANDWIDTH_80	0x04	/* Bandwidth 80Mhz */
+#define SP_RULE_RADIO_BANDWIDTH_160	0x08	/* Bandwidth 160Mhz */
+#define SP_RULE_RADIO_BANDWIDTH_80_80	0x10	/* Bandwidth 80+80Mhz */
+
+#define SP_RULE_MAX_VDEV_PER_ML 7
+#define WLAN_SSID_MAX_LEN	32	/* Max ssid len */
+#define SP_MAPDB_RADIO_FLAG_AND	"AND"	/* Radio mode AND */
+#define SP_MAPDB_RADIO_FLAG_OR	"OR"	/* Radio mode OR */
+
+/*
  * sp_mapdb_update_results
  * 	Result values of rule update.
  */
@@ -358,6 +381,76 @@ struct sp_rule_inner {
 	 * Threshold size to initiate fragmentation
 	 */
 	uint16_t ipv4_frag_thresh;
+
+	/*
+	 * Flag indicating WLAN specific parameters
+	 */
+	uint8_t wlan_flow;
+
+	/*
+	 * Transmitter mac
+	 */
+	uint8_t transmitter_mac[ETH_ALEN];
+
+	/*
+	 * Receiver mac
+	 */
+	uint8_t receiver_mac[ETH_ALEN];
+
+	/*
+	 * Array of radio bands for each possible vdes
+	 */
+	uint32_t radio_band;
+
+	/*
+	 * Array of radio channels for each possible VDEVs
+	 */
+	uint8_t radio_channel[SP_RULE_MAX_VDEV_PER_ML];
+
+	/*
+	 * Array of radio bandwidth for each possible VDEVs
+	 */
+	uint32_t radio_bandwidth;
+
+	/*
+	 * band mode
+	 */
+	uint8_t band_mode;
+
+	/*
+	 * channel mode
+	 */
+	uint8_t channel_mode;
+
+	/*
+	 * bandwidth mode
+	 */
+	uint8_t bandwidth_mode;
+
+	/*
+	 * bssid
+	 */
+	uint8_t bssid[ETH_ALEN];
+
+	/*
+	 * ssid length
+	 */
+	uint8_t ssid_len;
+
+	/*
+	 * ssid
+	 */
+	char ssid[WLAN_SSID_MAX_LEN];
+
+	/*
+	 * access class
+	 */
+	uint8_t access_class;
+
+	/*
+	 * priority
+	 */
+	uint8_t priority;
 };
 
 /*
@@ -416,6 +509,8 @@ struct sp_rule_input_params {
 	uint8_t dst_ifindex;			/* Destination interface index */
 	uint8_t dev_addr[ETH_HLEN];		/* Netdevice address in case of WDS EXT case */
 	uint8_t src_ifindex;			/* Source Interface Index */
+	struct net_device *src_dev;		/* src dev */
+	struct net_device *dest_dev;		/* dest dev */
 };
 
 /*
@@ -448,6 +543,54 @@ struct sp_rule_del_params {
 	int protocol;			/* Protocl number */
 	int ip_version;			/* IP version */
 };
+
+/*
+ * emesh_sp_wifi_plugin_metadata
+ * 	contains parameters for plugin module
+ */
+struct emesh_sp_wifi_plugin_metadata {
+	uint8_t access_class;	/* access class */
+	uint8_t valid_flags;	/* valid flags */
+	uint8_t band_mode;	/* band mode */
+	uint8_t channel_mode;	/* channel mode */
+	uint8_t bandwidth_mode;	/* bandwidth mode */
+	uint8_t priority;	/* priority */
+	uint8_t ssid_len;	/* ssid len */
+	uint8_t dest_mac[ETH_ALEN];	/*Receiver's mac */
+	uint8_t bssid[ETH_ALEN];	/* bssid */
+	uint8_t ra_mac[ETH_ALEN];	/* ra_mac */
+	uint8_t ta_mac[ETH_ALEN];	/* ta_mac */
+	uint32_t radio_band;	/* radio band */
+	uint32_t radio_bw;	/* radio bandwidth */
+	uint32_t pcp;	/* Receiver's pcp value */
+	uint32_t dscp;	/* Receiver's dscp value */
+	uint8_t radio_chan[SP_RULE_MAX_VDEV_PER_ML];	/* radio channel */
+	struct net_device *netdev;	/* netdev */
+	char ssid[WLAN_SSID_MAX_LEN];	/* ssid */
+} __attribute__((packed));
+
+/*
+ * callback for plugin
+ * 	Emesh SP rule query callback to which Wi-Fi plugin module will register
+ */
+typedef bool (*emesh_sp_wifi_sawf_rule_query_callback_t)(struct emesh_sp_wifi_plugin_metadata *wifi_info);
+
+/*
+ * Data structure for emesh-sp wifi-plugin callbacks
+ */
+struct emesh_sp_wifi_sawf_callbacks {
+	emesh_sp_wifi_sawf_rule_query_callback_t sawf_rule_query_callback;
+};
+
+/*
+ * Register WLAN rule query callback with plugin
+ */
+int emesh_sp_wifi_plugin_query_wlan_rule_cb_register(struct emesh_sp_wifi_sawf_callbacks *wifi_plugin_cb);
+
+/*
+ * Unregister WLAN rule query callback with plugin
+ */
+void emesh_sp_wifi_plugin_query_wlan_rule_cb_unregister(void);
 
 sp_mapdb_update_result_t sp_mapdb_rule_update(struct sp_rule *newrule);
 
