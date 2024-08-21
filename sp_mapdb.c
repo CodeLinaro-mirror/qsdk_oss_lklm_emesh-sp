@@ -81,6 +81,53 @@ static uint32_t sp_mapdb_get_hash(struct sp_mapdb_5tuple *tuple)
 }
 
 /*
+ * sp_mapdb_rule_5tuple_cmp_v4()
+ *	Checks if a rule is mapped to a particular ipv4 5-tuple
+ */
+static inline bool sp_mapdb_rule_5tuple_cmp_v4(struct sp_rule rule, struct sp_mapdb_5tuple *tuple)
+{
+	if (rule.inner.src_ipv4_addr != tuple->src_addr[0] || rule.inner.dst_ipv4_addr != tuple->dest_addr[0])
+		return false;
+
+	return true;
+}
+
+/*
+ * sp_mapdb_rule_5tuple_cmp_v6()
+ *	Checks if a rule is mapped to a particular ipv6 5-tuple
+ */
+static inline bool sp_mapdb_rule_5tuple_cmp_v6(struct sp_rule rule, struct sp_mapdb_5tuple *tuple)
+{
+	if (memcmp(rule.inner.src_ipv6_addr, tuple->src_addr, sizeof(uint32_t) * 4) || memcmp(rule.inner.dst_ipv6_addr, tuple->dest_addr, sizeof(uint32_t) * 4))
+		return false;
+
+	return true;
+}
+
+/*
+ * sp_mapdb_rule_5tuple_cmp()
+ *	Checks if a rule is mapped to a particular 5-tuple
+ */
+static bool sp_mapdb_rule_5tuple_cmp(struct sp_rule rule, struct sp_mapdb_5tuple *tuple)
+{
+	if (rule.inner.src_port != tuple->src_port || rule.inner.dst_port != tuple->dest_port || rule.inner.protocol_number != tuple->protocol) {
+		return false;
+	}
+
+	if (rule.inner.ip_version_type == 4) {
+		if (!sp_mapdb_rule_5tuple_cmp_v4(rule, tuple))
+			return false;
+	}
+
+	if (rule.inner.ip_version_type == 6) {
+		if (!sp_mapdb_rule_5tuple_cmp_v6(rule, tuple))
+			return false;
+	}
+
+	return true;
+}
+
+/*
  * sp_mapdb_rule_match_sawf()
  * 	Performs rule match on received skb.
  *
@@ -475,20 +522,71 @@ static void sp_rule_destroy_rcu(struct rcu_head *head)
 
 /*
  * sp_mapdb_search_hashentry()
- * 	Find the hashentry that stores the rule_node by the ruleid and rule_type
+ *	Find the hashentry based on rule id if rule id is valid. Otherwise use 5-tuple match.
  */
-static struct sp_mapdb_rule_id_hashentry *sp_mapdb_search_hashentry(uint32_t key, uint32_t ruleid, uint8_t rule_type)
+static struct sp_mapdb_rule_id_hashentry *sp_mapdb_search_hashentry(uint32_t key, uint32_t ruleid, uint8_t rule_type, struct sp_mapdb_5tuple *tuple)
 {
 	struct sp_mapdb_rule_id_hashentry *hashentry_iter;
 
 	hash_for_each_possible(rule_manager.rule_hashmap, hashentry_iter, hlist, key) {
-		if ((hashentry_iter->rule_node->rule.id == ruleid) &&
+		/*
+		 * It is possible there are multiple rules without valid rule id
+		 * which can only be identified by tuple
+		 */
+		if (ruleid == SP_RULE_INVALID_RULE_ID && rule_type == SP_RULE_TYPE_SAWF_IFLI) {
+			if (!tuple) {
+				DEBUG_WARN("Tuple is invalid for IFLI rule hash search\n");
+				return NULL;
+			}
+
+			if (sp_mapdb_rule_5tuple_cmp(hashentry_iter->rule_node->rule, tuple)) {
+				return hashentry_iter;
+			}
+
+		} else if ((hashentry_iter->rule_node->rule.id == ruleid) &&
 		     (hashentry_iter->rule_node->rule.classifier_type == rule_type)) {
 			return hashentry_iter;
 		}
 	}
 
 	return NULL;
+}
+
+/*
+ * sp_mapdb_get_tuple_v4()
+ *	Fills sp_mapdb_5tuple structure given an ipv4 rule
+ */
+static inline void sp_mapdb_get_tuple_v4(struct sp_rule *rule, struct sp_mapdb_5tuple *tuple)
+{
+	tuple->src_addr[0] = rule->inner.src_ipv4_addr;
+	tuple->dest_addr[0] = rule->inner.dst_ipv4_addr;
+}
+
+/*
+ * sp_mapdb_get_tuple_v6()
+ *	Fills sp_mapdb_5tuple structure given an ipv6 rule
+ */
+static inline void sp_mapdb_get_tuple_v6(struct sp_rule *rule, struct sp_mapdb_5tuple *tuple)
+{
+	memcpy(tuple->src_addr, rule->inner.src_ipv6_addr, sizeof(uint32_t) * 4);
+	memcpy(tuple->dest_addr, rule->inner.dst_ipv6_addr, sizeof(uint32_t) * 4);
+}
+
+/*
+ * sp_mapdb_get_tuple()
+ *	Fills sp_mapdb_5tuple structure given a rule
+ */
+static void sp_mapdb_get_tuple(struct sp_rule *rule, struct sp_mapdb_5tuple *tuple)
+{
+	if (rule->inner.flags_sawf & SP_RULE_FLAG_MATCH_SAWF_SRC_IPV4 && rule->inner.flags_sawf & SP_RULE_FLAG_MATCH_SAWF_DST_IPV4) {
+		sp_mapdb_get_tuple_v4(rule, tuple);
+	} else if (rule->inner.flags_sawf & SP_RULE_FLAG_MATCH_SAWF_SRC_IPV6 && rule->inner.flags_sawf & SP_RULE_FLAG_MATCH_SAWF_DST_IPV6) {
+		sp_mapdb_get_tuple_v6(rule, tuple);
+	}
+
+	tuple->src_port = rule->inner.src_port;
+	tuple->dest_port = rule->inner.dst_port;
+	tuple->protocol = rule->inner.protocol_number;
 }
 
 /*
@@ -540,38 +638,12 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 	 * Update the key for IFLI rule type
 	 */
 	if (rule_type == SP_RULE_TYPE_SAWF_IFLI) {
-		if (newrule->id != SP_RULE_INVALID_RULE_ID && newrule->id) {
-			DEBUG_ERROR("%px:IFLI rule must be pushed without rule ID\n", newrule);
-			return SP_MAPDB_UPDATE_RESULT_ERR;
-		}
-
-		if (newrule->inner.flags_sawf & SP_RULE_FLAG_MATCH_SAWF_SRC_IPV6) {
-			tuple.src_addr[0] = newrule->inner.src_ipv6_addr[0];
-			tuple.src_addr[1] = newrule->inner.src_ipv6_addr[1];
-			tuple.src_addr[2] = newrule->inner.src_ipv6_addr[2];
-			tuple.src_addr[3] = newrule->inner.src_ipv6_addr[3];
-		} else if (newrule->inner.flags_sawf & SP_RULE_FLAG_MATCH_SAWF_SRC_IPV4) {
-			tuple.src_addr[0] = newrule->inner.src_ipv4_addr;
-		}
-
-		if (newrule->inner.flags_sawf & SP_RULE_FLAG_MATCH_SAWF_DST_IPV6) {
-			tuple.dest_addr[0] = newrule->inner.dst_ipv6_addr[0];
-			tuple.dest_addr[1] = newrule->inner.dst_ipv6_addr[1];
-			tuple.dest_addr[2] = newrule->inner.dst_ipv6_addr[2];
-			tuple.dest_addr[3] = newrule->inner.dst_ipv6_addr[3];
-		} else if (newrule->inner.flags_sawf & SP_RULE_FLAG_MATCH_SAWF_SRC_IPV4) {
-			tuple.dest_addr[0] = newrule->inner.dst_ipv4_addr;
-		}
-
-		tuple.src_port = newrule->inner.src_port;
-		tuple.dest_port = newrule->inner.dst_port;
-		tuple.protocol = newrule->inner.protocol_number;
-
+		sp_mapdb_get_tuple(newrule, &tuple);
 		key = sp_mapdb_get_hash(&tuple);
 	}
 
 	spin_lock(&sp_mapdb_lock);
-	cur_hashentry = sp_mapdb_search_hashentry(key, newrule->id, rule_type);
+	cur_hashentry = sp_mapdb_search_hashentry(key, newrule->id, rule_type, &tuple);
 	if (!cur_hashentry) {
 		spin_unlock(&sp_mapdb_lock);
 		new_hashentry = (struct sp_mapdb_rule_id_hashentry *)kzalloc(sizeof(struct sp_mapdb_rule_id_hashentry), GFP_KERNEL);
@@ -649,7 +721,7 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
  *
  * The memory for the rule node will also be deleted as hash entry will also be freed.
  */
-static sp_mapdb_update_result_t sp_mapdb_rule_delete(uint32_t ruleid, uint32_t key, uint8_t rule_type)
+static sp_mapdb_update_result_t sp_mapdb_rule_delete(uint32_t ruleid, uint32_t key, uint8_t rule_type, struct sp_mapdb_5tuple *tuple)
 {
 	struct sp_mapdb_rule_node *tobedeleted;
 	struct sp_mapdb_rule_id_hashentry *cur_hashentry = NULL;
@@ -661,7 +733,7 @@ static sp_mapdb_update_result_t sp_mapdb_rule_delete(uint32_t ruleid, uint32_t k
 		return SP_MAPDB_UPDATE_RESULT_ERR_TBLEMPTY;
 	}
 
-	cur_hashentry = sp_mapdb_search_hashentry(key, ruleid, rule_type);
+	cur_hashentry = sp_mapdb_search_hashentry(key, ruleid, rule_type, tuple);
 	if (!cur_hashentry) {
 		spin_unlock(&sp_mapdb_lock);
 		DEBUG_WARN("there is no such rule as ruleID = %d, rule_type: %d\n", ruleid, rule_type);
@@ -1025,16 +1097,24 @@ static const char* sp_mapdb_enum_to_char_ae_type(enum sp_rule_ae_type ae_type)
 /*
  * sp_mapdb_ifli_rule_flush()
  * 	Clear the rule and frees the memory allocated for rule type IFLI.
- *
- * It will enumerate all the precedence in the prec_map,
- * and start from the head node in each of the precedence in the prec_map,
- * and free all the rule nodes
- * as well as the associated hashentry, with
- * these precedence.
  */
-void sp_mapdb_ifli_rule_flush(uint32_t rule_id, uint32_t key)
+void sp_mapdb_ifli_rule_flush(struct sp_rule_del_params *del_params)
 {
-	sp_mapdb_rule_delete(rule_id, key, SP_RULE_TYPE_SAWF_IFLI);
+	struct sp_mapdb_5tuple tuple = {0};
+
+	tuple.src_port = del_params->src_port;
+	tuple.dest_port = del_params->dest_port;
+	tuple.protocol = del_params->protocol;
+
+	if (del_params->ip_version == 4) {
+		tuple.src_addr[0] = del_params->src_ip[0];
+		tuple.dest_addr[0] = del_params->dest_ip[0];
+	} else if (del_params->ip_version == 6) {
+		memcpy(tuple.src_addr, del_params->src_ip, sizeof(uint32_t) * 4);
+		memcpy(tuple.dest_addr, del_params->dest_ip, sizeof(uint32_t) * 4);
+	}
+
+	sp_mapdb_rule_delete(del_params->rule_id, del_params->key, SP_RULE_TYPE_SAWF_IFLI, &tuple);
 }
 EXPORT_SYMBOL(sp_mapdb_ifli_rule_flush);
 
@@ -1102,6 +1182,8 @@ EXPORT_SYMBOL(sp_mapdb_ruletable_flush);
 sp_mapdb_update_result_t sp_mapdb_rule_update(struct sp_rule *newrule)
 {
 	sp_mapdb_update_result_t error_code = 0;
+	struct sp_mapdb_5tuple tuple = {0};
+	uint32_t key;
 
 	if (!newrule) {
 		return SP_MAPDB_UPDATE_RESULT_ERR_NEWRULE_NULLPTR;
@@ -1114,7 +1196,13 @@ sp_mapdb_update_result_t sp_mapdb_rule_update(struct sp_rule *newrule)
 
 	switch (newrule->cmd) {
 	case SP_MAPDB_ADD_REMOVE_FILTER_DELETE:
-		error_code = sp_mapdb_rule_delete(newrule->id, newrule->id, newrule->classifier_type);
+		if (newrule->id == SP_RULE_INVALID_RULE_ID) {
+			sp_mapdb_get_tuple(newrule, &tuple);
+			key = sp_mapdb_get_hash(&tuple);
+			error_code = sp_mapdb_rule_delete(newrule->id, key, newrule->classifier_type, &tuple);
+		} else {
+			error_code = sp_mapdb_rule_delete(newrule->id, newrule->id, newrule->classifier_type, NULL);
+		}
 		break;
 
 	case SP_MAPDB_ADD_REMOVE_FILTER_ADD:
@@ -1170,24 +1258,23 @@ static inline void sp_mapdb_rule_print_input_params(struct sp_mapdb_rule_node *c
  */
 void sp_mapdb_ruletable_print(void)
 {
-	int i;
-	struct sp_mapdb_rule_node *curnode = NULL;
+	struct sp_mapdb_rule_id_hashentry *hashentry_iter;
+	struct hlist_node *hlist_tmp;
+	int hash_bkt;
 
 	rcu_read_lock();
 	printk("\n====Rule table start====\nTotal rule count = %d\n", rule_manager.rule_count);
-	for (i = SP_MAPDB_RULE_MAX_PRECEDENCENUM - 1; i >= 0; i--) {
-		if (!list_empty(&(rule_manager.prec_map[i].rule_list))) {
-			list_for_each_entry_rcu(curnode, &(rule_manager.prec_map[i].rule_list), rule_list) {
-				printk("\nid: %d, classifier_type: %d, precedence: %d\n", curnode->rule.id, curnode->rule.classifier_type, curnode->rule.rule_precedence);
-				sp_mapdb_rule_print_input_params(curnode);
-				printk("\n........OUTPUT PARAMS........\n");
-				printk("dscp_remark: %d, vlan_pcp_remark: %d\n", curnode->rule.inner.dscp_remark, curnode->rule.inner.vlan_pcp_remark);
-				printk("output(priority): %d, service_class_id: %d\n ipv4_frag_thresh: %d\n", curnode->rule.inner.rule_output, curnode->rule.inner.service_class_id, curnode->rule.inner.ipv4_frag_thresh);
-				printk("MSCS TID BITMAP: %x: Priority Limit Value: %x\n", curnode->rule.inner.mscs_tid_bitmap, curnode->rule.inner.priority_limit);
-				printk("acceleration engine type: %s\n", sp_mapdb_enum_to_char_ae_type(curnode->rule.inner.ae_type));
-			}
-		}
+	hash_for_each_safe(rule_manager.rule_hashmap, hash_bkt, hlist_tmp, hashentry_iter, hlist) {
+		printk("\nid: %d, classifier_type: %s, precedence: %d\n", hashentry_iter->rule_node->rule.id, sp_mapdb_get_classifier_type_str(hashentry_iter->rule_node->rule.classifier_type), hashentry_iter->rule_node->rule.rule_precedence);
+		sp_mapdb_rule_print_input_params(hashentry_iter->rule_node);
+		printk("\n........OUTPUT PARAMS........\n");
+		printk("dscp_remark: %d, vlan_pcp_remark: %d\n", hashentry_iter->rule_node->rule.inner.dscp_remark, hashentry_iter->rule_node->rule.inner.vlan_pcp_remark);
+		printk("output(priority): %d, service_class_id: %d\n", hashentry_iter->rule_node->rule.inner.rule_output, hashentry_iter->rule_node->rule.inner.service_class_id);
+		printk("MSCS TID BITMAP: %x: Priority Limit Value: %x\n", hashentry_iter->rule_node->rule.inner.mscs_tid_bitmap, hashentry_iter->rule_node->rule.inner.priority_limit);
+		printk("acceleration engine type: %s\n", sp_mapdb_enum_to_char_ae_type(hashentry_iter->rule_node->rule.inner.ae_type));
 	}
+
+
 	rcu_read_unlock();
 	printk("====Rule table ends====\n");
 }
@@ -1905,6 +1992,11 @@ static inline int sp_mapdb_rule_query(struct sk_buff *skb, struct genl_info *inf
 
 	rcu_read_lock();
 	rule_id = nla_get_u32(info->attrs[SP_GNL_ATTR_ID]);
+	if (!rule_id) {
+		DEBUG_WARN("Rule ID does not exist for queried rule\n");
+		return -ENOMEM;
+	}
+
 	DEBUG_INFO("User requested rule with rule_id: 0x%x \n", rule_id);
 	rcu_read_unlock();
 
@@ -1915,7 +2007,7 @@ static inline int sp_mapdb_rule_query(struct sk_buff *skb, struct genl_info *inf
 		goto put_failure;
 	}
 
-	cur_hashentry = sp_mapdb_search_hashentry(rule_id, rule_id, SP_RULE_TYPE_SAWF);
+	cur_hashentry = sp_mapdb_search_hashentry(rule_id, rule_id, SP_RULE_TYPE_SAWF, NULL);
 	if (!cur_hashentry) {
 		spin_unlock(&sp_mapdb_lock);
 		DEBUG_WARN("Invalid rule with ruleID = %d, rule_type: %d\n", rule_id, SP_RULE_TYPE_SAWF);
@@ -2040,6 +2132,11 @@ static inline int sp_mapdb_rule_query_by_type(struct sk_buff *skb, struct genl_i
 
 	if (type <= SP_RULE_TYPE_SAWF_INVALID || type >= SP_RULE_TYPE_SAWF_MAX) {
 		DEBUG_WARN("type is invalid\n");
+		goto put_failure;
+	}
+
+	if (type == SP_RULE_TYPE_SAWF_IFLI) {
+		DEBUG_WARN("Query by type is not supported for IFLI rules\n");
 		goto put_failure;
 	}
 
