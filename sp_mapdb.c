@@ -1227,6 +1227,54 @@ sp_mapdb_update_result_t sp_mapdb_rule_update(struct sp_rule *newrule)
 EXPORT_SYMBOL(sp_mapdb_rule_update);
 
 /*
+ * sp_mapdb_enum_radio_band_to_str()
+ * 	Convert a sp_rule_vdev_band enum represented band to string
+ */
+static inline char *sp_mapdb_enum_radio_band_to_str(enum sp_mapdb_radio_band band)
+{
+	switch (band) {
+	case SP_MAPDB_RADIO_BAND_INVALID:
+		break;
+	case SP_MAPDB_RADIO_BAND_2G:
+		return "2G";
+	case SP_MAPDB_RADIO_BAND_5G:
+		return "5G";
+	case SP_MAPDB_RADIO_BAND_5GH:
+		return "5GH";
+	case SP_MAPDB_RADIO_BAND_5GL:
+		return "5GL";
+	case SP_MAPDB_RADIO_BAND_6G:
+		return "6G";
+	}
+
+	return NULL;
+}
+
+/*
+ * sp_mapdb_enum_radio_bw_to_str()
+ * 	Convert a sp_rule_vdev_band enum represented band to string
+ */
+static inline char *sp_mapdb_enum_radio_bw_to_str(enum sp_mapdb_radio_bandwidth bandwidth)
+{
+	switch (bandwidth) {
+	case SP_MAPDB_RADIO_BANDWIDTH_INVALID:
+		break;
+	case SP_MAPDB_RADIO_BANDWIDTH_20:
+		return "20";
+	case SP_MAPDB_RADIO_BANDWIDTH_40:
+		return "40";
+	case SP_MAPDB_RADIO_BANDWIDTH_80:
+		return "80";
+	case SP_MAPDB_RADIO_BANDWIDTH_160:
+		return "160";
+	case SP_MAPDB_RADIO_BANDWIDTH_80_80:
+		return "80_80";
+	}
+
+	return NULL;
+}
+
+/*
  * sp_mapdb_rule_print_input_wlan_params()
  * 	Print the input wlan parameters of the current rule.
  */
@@ -1242,7 +1290,11 @@ static inline void sp_mapdb_rule_print_input_wlan_params(struct sp_mapdb_rule_no
 		printk("band_mode: %s\n", SP_MAPDB_RADIO_FLAG_OR);
 	}
 
-	printk("band bitmap: 0x%x", curnode->rule.inner.radio_band);
+	printk("band: ");
+	for (i = 0; i < SP_RULE_MAX_VDEV_PER_ML; i++) {
+		printk("%s ", sp_mapdb_enum_radio_band_to_str(curnode->rule.inner.radio_band[i]));
+	}
+
 	if (curnode->rule.inner.channel_mode == 1) {
 		printk("channel_mode: %s\n", SP_MAPDB_RADIO_FLAG_AND);
 	} else {
@@ -1260,7 +1312,11 @@ static inline void sp_mapdb_rule_print_input_wlan_params(struct sp_mapdb_rule_no
 		printk("bandwidth_mode: %s\n", SP_MAPDB_RADIO_FLAG_OR);
 	}
 
-	printk("bandwidth bitmap: 0x%x", curnode->rule.inner.radio_bandwidth);
+	printk("bandwidth: ");
+	for (i = 0; i < SP_RULE_MAX_VDEV_PER_ML; i++) {
+		printk("%s ", sp_mapdb_enum_radio_bw_to_str(curnode->rule.inner.radio_bandwidth[i]));
+	}
+
 	printk("ssid: %s", curnode->rule.inner.ssid);
 	printk("ssid_len: 0x%x", curnode->rule.inner.ssid_len);
 	printk("bssid: %pM", curnode->rule.inner.bssid);
@@ -1399,10 +1455,10 @@ void sp_mapdb_get_wlan_latency_params(struct sk_buff *skb,
 EXPORT_SYMBOL(sp_mapdb_get_wlan_latency_params);
 
 /*
- * sp_mapdb_rule_validate_wlan_params()
- * 	API to validate WLAN parameters with WLAN driver through plugin
+ * sp_mapdb_rule_query_wlan_params()
+ * 	API to query WLAN parameters with WLAN driver through plugin
  */
-static inline bool sp_mapdb_rule_validate_wlan_params(struct emesh_sp_wifi_plugin_metadata *wifi_metadata, struct sp_mapdb_rule_node *curnode, struct sp_rule_input_params *params)
+static inline bool sp_mapdb_rule_query_wlan_params(struct sp_rule_wifi_plugin_metadata *wifi_metadata, struct sp_mapdb_rule_node *curnode, struct sp_rule_input_params *params)
 {
 	ether_addr_copy(wifi_metadata->dest_mac, params->dst.mac);
 	wifi_metadata->band_mode = curnode->rule.inner.band_mode;
@@ -1415,18 +1471,16 @@ static inline bool sp_mapdb_rule_validate_wlan_params(struct emesh_sp_wifi_plugi
 	ether_addr_copy(wifi_metadata->ta_mac, curnode->rule.inner.transmitter_mac);
 	ether_addr_copy(wifi_metadata->ra_mac, curnode->rule.inner.receiver_mac);
 	ether_addr_copy(wifi_metadata->bssid, curnode->rule.inner.bssid);
-	wifi_metadata->radio_band = curnode->rule.inner.radio_band;
+	memcpy(wifi_metadata->radio_band, curnode->rule.inner.radio_band, sizeof(wifi_metadata->radio_band));
 	memcpy(wifi_metadata->radio_chan, curnode->rule.inner.radio_channel, sizeof(wifi_metadata->radio_chan));
-	wifi_metadata->radio_bw = curnode->rule.inner.radio_bandwidth;
+	memcpy(wifi_metadata->radio_bw, curnode->rule.inner.radio_bandwidth, sizeof(wifi_metadata->radio_bw));
 
 	/*
-	 * validate metadata with WLAN through plugin
+	 * query metadata with WLAN through plugin
 	 */
 	if (!emesh_sp_wifi.sawf_rule_query_callback(wifi_metadata)) {
 
-		/*
-		 * TODO: in incremental patch add failure print
-		 */
+		DEBUG_INFO("WLAN rule match failed for rule_id : %d\n", curnode->rule.id);
 		return false;
 	}
 
@@ -1453,16 +1507,12 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 	uint8_t sawf_rule_type = SP_RULE_TYPE_SAWF_INVALID;
 	enum sp_rule_ae_type ae_type = SP_RULE_AE_TYPE_DEFAULT;
 	uint16_t ipv4_frag_thresh = SP_RULE_INVALID_IPV4_FRAG_THRESH;
-	struct emesh_sp_wifi_plugin_metadata wifi_metadata = {0};
-	struct net_device *src_dev, *dest_dev;
+	struct sp_rule_wifi_plugin_metadata wifi_metadata = {0};
+	struct net_device *dest_dev;
 
-	/*
-	 * TODO: In incremental patch remove src dev
-	 */
-	src_dev = params->src_dev;
 	dest_dev = params->dest_dev;
 
-	if (!src_dev || !dest_dev) {
+	if (!dest_dev) {
 		goto set_output;
 	}
 
@@ -1484,7 +1534,7 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 	 * fill pcp if valid
 	 */
 	if (params->vlan_tci != SP_RULE_INVALID_VLAN_TCI) {
-		wifi_metadata.pcp = params->vlan_tci & VLAN_PRIO_MASK;
+		wifi_metadata.pcp = (uint8_t)((params->vlan_tci & VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT);
 		wifi_metadata.valid_flags = 1;
 	}
 
@@ -1513,7 +1563,7 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 						 * current SPM rule has WLAN params
 						 * 	validate with WLAN if they are valid or not
 						 */
-						if (!sp_mapdb_rule_validate_wlan_params(&wifi_metadata, curnode, params)) {
+						if (!sp_mapdb_rule_query_wlan_params(&wifi_metadata, curnode, params)) {
 
 							/*
 							 * Current WLAN rules are not valid
@@ -1738,83 +1788,213 @@ put_failure:
 }
 
 /*
+ * sp_mapdb_str_radio_band_to_enum()
+ * 	Convert a string represented band to sp_rule_vdev_band enum
+ */
+static inline enum sp_mapdb_radio_band sp_mapdb_str_radio_band_to_idx(char *str)
+{
+	if (!(strcasecmp(str, "2G"))) {
+		return SP_MAPDB_RADIO_BAND_2G;
+	}
+
+	if (!(strcasecmp(str, "5G"))) {
+		return SP_MAPDB_RADIO_BAND_5G;
+	}
+
+	if (!(strcasecmp(str, "5GH"))) {
+		return SP_MAPDB_RADIO_BAND_5GH;
+	}
+
+	if (!(strcasecmp(str, "5GL"))) {
+		return SP_MAPDB_RADIO_BAND_5GL;
+	}
+
+	if (!(strcasecmp(str, "6G"))) {
+		return SP_MAPDB_RADIO_BAND_6G;
+	}
+
+	return SP_MAPDB_RADIO_BAND_INVALID;
+}
+
+/*
+ * sp_mapdb_str_radio_bw_to_enum()
+ * 	Convert a string represented bandwidth to sp_rule_vdev_band enum
+ */
+static inline enum sp_mapdb_radio_bandwidth sp_mapdb_str_radio_bw_to_enum(char *str)
+{
+	if (!(strcasecmp(str, "20"))) {
+		return SP_MAPDB_RADIO_BANDWIDTH_20;
+	}
+
+	if (!(strcasecmp(str, "40"))) {
+		return SP_MAPDB_RADIO_BANDWIDTH_40;
+	}
+
+	if (!(strcasecmp(str, "80"))) {
+		return SP_MAPDB_RADIO_BANDWIDTH_80;
+	}
+
+	if (!(strcasecmp(str, "160"))) {
+		return SP_MAPDB_RADIO_BANDWIDTH_160;
+	}
+
+	if (!(strcasecmp(str, "80_80"))) {
+		return SP_MAPDB_RADIO_BANDWIDTH_80_80;
+	}
+
+	return SP_MAPDB_RADIO_BANDWIDTH_INVALID;
+}
+
+/*
+ * sp_mapdb_construct_radio_info_map()
+ * 	Store the enum converted radio info to sp rule
+ */
+static inline bool sp_mapdb_construct_radio_info_map(struct sp_rule_radio_info *radio, struct sp_rule_wifi_plugin_metadata *wifi_metadata)
+{
+	int t;
+	enum sp_mapdb_radio_band idx;
+	enum sp_mapdb_radio_bandwidth bw;
+
+	for (t = 1; t < SP_RULE_MAX_VDEV_PER_ML; t++) {
+		idx = sp_mapdb_str_radio_band_to_idx(radio->radio_band[t]);
+		wifi_metadata->radio_band[idx] = SP_RULE_BAND_VALID;
+		bw = sp_mapdb_str_radio_bw_to_enum(radio->radio_bandwidth[t]);
+		wifi_metadata->radio_bw[idx] = bw;
+		wifi_metadata->radio_chan[idx] = radio->radio_channel[t];
+	}
+
+	return true;
+}
+
+/*
  * sp_mapdb_parse_wlan_rule()
  * 	Extract wlan parameters from netlink message.
  */
-static inline void sp_mapdb_parse_wlan_rule(struct genl_info *info, struct sp_rule *to_sawf_sp)
+static inline bool sp_mapdb_parse_wlan_rule(struct genl_info *info, struct sp_rule *to_sawf_sp)
 {
-	to_sawf_sp->inner.wlan_flow = nla_get_u8(info->attrs[SP_GNL_ATTR_WLAN_FLOW]);
-	DEBUG_INFO("WLAN_flow: %d\n", to_sawf_sp->inner.wlan_flow);
+	int i;
+	struct sp_rule_radio_info radio = {0};
+	struct sp_rule_wifi_plugin_metadata wifi_metadata = {0};
 
 	if (info->attrs[SP_GNL_ATTR_TRANSMITTER_MAC]) {
-		memcpy(to_sawf_sp->inner.transmitter_mac, nla_data(info->attrs[SP_GNL_ATTR_TRANSMITTER_MAC]), ETH_ALEN);
-		DEBUG_INFO("transmitter_mac : %pM\n", to_sawf_sp->inner.transmitter_mac);
+		memcpy(wifi_metadata.ta_mac, nla_data(info->attrs[SP_GNL_ATTR_TRANSMITTER_MAC]), ETH_ALEN);
 	}
 
 	if (info->attrs[SP_GNL_ATTR_RECEIVER_MAC]) {
-		memcpy(to_sawf_sp->inner.receiver_mac, nla_data(info->attrs[SP_GNL_ATTR_RECEIVER_MAC]), ETH_ALEN);
-		DEBUG_INFO("receiver_mac : %pM\n", to_sawf_sp->inner.receiver_mac);
+		memcpy(wifi_metadata.ra_mac, nla_data(info->attrs[SP_GNL_ATTR_RECEIVER_MAC]), ETH_ALEN);
 	}
 
 	if (info->attrs[SP_GNL_ATTR_RADIO_BAND]) {
-		to_sawf_sp->inner.radio_band = nla_get_u32(info->attrs[SP_GNL_ATTR_RADIO_BAND]);
-		DEBUG_INFO("radio_band: 0x%x\n", to_sawf_sp->inner.radio_band);
+		memcpy(radio.radio_band, nla_data(info->attrs[SP_GNL_ATTR_RADIO_BAND]), sizeof(radio.radio_band));
 	}
 
 	if (info->attrs[SP_GNL_ATTR_RADIO_CHANNEL]) {
-		int i;
-		memcpy(to_sawf_sp->inner.radio_channel, nla_data(info->attrs[SP_GNL_ATTR_RADIO_CHANNEL]), sizeof(to_sawf_sp->inner.radio_channel));
-		DEBUG_INFO("radio_channel: ");
-		for (i = 1; i < SP_RULE_MAX_VDEV_PER_ML; ++i) {
-			DEBUG_INFO("\n%d ", to_sawf_sp->inner.radio_channel[i]);
-		}
-		DEBUG_INFO("\n");
+		memcpy(radio.radio_channel, nla_data(info->attrs[SP_GNL_ATTR_RADIO_CHANNEL]), sizeof(radio.radio_channel));
 	}
 
 	if (info->attrs[SP_GNL_ATTR_RADIO_BANDWIDTH]) {
-		to_sawf_sp->inner.radio_bandwidth = nla_get_u32(info->attrs[SP_GNL_ATTR_RADIO_BANDWIDTH]);
-		DEBUG_INFO("radio_bandwidth: 0x%x\n", to_sawf_sp->inner.radio_bandwidth);
+		memcpy(radio.radio_bandwidth, nla_data(info->attrs[SP_GNL_ATTR_RADIO_BANDWIDTH]), sizeof(radio.radio_bandwidth));
 	}
 
+	sp_mapdb_construct_radio_info_map(&radio, &wifi_metadata);
+
 	if (info->attrs[SP_GNL_ATTR_BAND_MODE]) {
-		to_sawf_sp->inner.band_mode = nla_get_u8(info->attrs[SP_GNL_ATTR_BAND_MODE]);
-		DEBUG_INFO("band_mode: %d\n", to_sawf_sp->inner.band_mode);
+		wifi_metadata.band_mode = nla_get_u8(info->attrs[SP_GNL_ATTR_BAND_MODE]);
 	}
 
 	if (info->attrs[SP_GNL_ATTR_CHANNEL_MODE]) {
-		to_sawf_sp->inner.channel_mode = nla_get_u8(info->attrs[SP_GNL_ATTR_CHANNEL_MODE]);
-		DEBUG_INFO("channel_mode: %d\n", to_sawf_sp->inner.channel_mode);
+		wifi_metadata.channel_mode = nla_get_u8(info->attrs[SP_GNL_ATTR_CHANNEL_MODE]);
 	}
 
 	if (info->attrs[SP_GNL_ATTR_BANDWIDTH_MODE]) {
-		to_sawf_sp->inner.bandwidth_mode = nla_get_u8(info->attrs[SP_GNL_ATTR_BANDWIDTH_MODE]);
-		DEBUG_INFO("bandwidth_mode: %d\n", to_sawf_sp->inner.bandwidth_mode);
+		wifi_metadata.bandwidth_mode = nla_get_u8(info->attrs[SP_GNL_ATTR_BANDWIDTH_MODE]);
 	}
 
 	if (info->attrs[SP_GNL_ATTR_BSSID]) {
-		memcpy(to_sawf_sp->inner.bssid, nla_data(info->attrs[SP_GNL_ATTR_BSSID]), ETH_ALEN);
-		DEBUG_INFO("bssid: %pM\n", to_sawf_sp->inner.bssid);
+		memcpy(wifi_metadata.bssid, nla_data(info->attrs[SP_GNL_ATTR_BSSID]), ETH_ALEN);
 	}
 
 	if (info->attrs[SP_GNL_ATTR_SSID_LEN]) {
-		to_sawf_sp->inner.ssid_len = nla_get_u8(info->attrs[SP_GNL_ATTR_SSID_LEN]);
-		DEBUG_INFO("ssid_len: %d\n", to_sawf_sp->inner.ssid_len);
+		wifi_metadata.ssid_len = nla_get_u8(info->attrs[SP_GNL_ATTR_SSID_LEN]);
 	}
 
 	if (info->attrs[SP_GNL_ATTR_SSID]) {
-		memcpy(to_sawf_sp->inner.ssid, nla_data(info->attrs[SP_GNL_ATTR_SSID]), sizeof(to_sawf_sp->inner.ssid));
-		DEBUG_INFO("ssid: %s\n", to_sawf_sp->inner.ssid);
+		memcpy(wifi_metadata.ssid, nla_data(info->attrs[SP_GNL_ATTR_SSID]), sizeof(wifi_metadata.ssid));
 	}
 
 	if (info->attrs[SP_GNL_ATTR_ACCESS_CLASS]) {
-		to_sawf_sp->inner.access_class = nla_get_u8(info->attrs[SP_GNL_ATTR_ACCESS_CLASS]);
-		DEBUG_INFO("access_class: %d\n", to_sawf_sp->inner.access_class);
+		wifi_metadata.access_class = nla_get_u8(info->attrs[SP_GNL_ATTR_ACCESS_CLASS]);
 	}
 
 	if (info->attrs[SP_GNL_ATTR_PRIORITY]) {
-		to_sawf_sp->inner.priority = nla_get_u8(info->attrs[SP_GNL_ATTR_PRIORITY]);
-		DEBUG_INFO("priority: %d\n", to_sawf_sp->inner.priority);
+		wifi_metadata.priority = nla_get_u8(info->attrs[SP_GNL_ATTR_PRIORITY]);
 	}
+
+	if (emesh_sp_wifi.sawf_rule_validate_callback) {
+
+		/*
+		 * Plugin callback is registered
+		 */
+		if (!emesh_sp_wifi.sawf_rule_validate_callback(&wifi_metadata)) {
+			DEBUG_ERROR("WLAN params are not valid\n");
+			return false;
+		}
+	} else {
+		DEBUG_ERROR("SAWF rule validate callback not registered with Wi-Fi plugin\n");
+		return false;
+	}
+
+	/*
+	 * The rule has valid WLAN params.
+	 * 	Add them to SPM.
+	 */
+	to_sawf_sp->inner.wlan_flow = nla_get_u8(info->attrs[SP_GNL_ATTR_WLAN_FLOW]);
+	to_sawf_sp->inner.band_mode = wifi_metadata.band_mode;
+	to_sawf_sp->inner.channel_mode = wifi_metadata.channel_mode;
+	to_sawf_sp->inner.bandwidth_mode = wifi_metadata.bandwidth_mode;
+	to_sawf_sp->inner.access_class = wifi_metadata.access_class;
+	to_sawf_sp->inner.priority = wifi_metadata.priority;
+	to_sawf_sp->inner.ssid_len = wifi_metadata.ssid_len;
+	memcpy(to_sawf_sp->inner.ssid, wifi_metadata.ssid, strlen(wifi_metadata.ssid) + 1);
+	ether_addr_copy(to_sawf_sp->inner.transmitter_mac, wifi_metadata.ta_mac);
+	ether_addr_copy(to_sawf_sp->inner.receiver_mac, wifi_metadata.ra_mac);
+	ether_addr_copy(to_sawf_sp->inner.bssid, wifi_metadata.bssid);
+	memcpy(to_sawf_sp->inner.radio_band, wifi_metadata.radio_band, sizeof(wifi_metadata.radio_band));
+	memcpy(to_sawf_sp->inner.radio_channel, wifi_metadata.radio_chan, sizeof(wifi_metadata.radio_chan));
+	memcpy(to_sawf_sp->inner.radio_bandwidth, wifi_metadata.radio_bw, sizeof(wifi_metadata.radio_bw));
+
+	/*
+	 * dump the wlan params
+	 */
+	DEBUG_INFO("WLAN_flow: %d\n", to_sawf_sp->inner.wlan_flow);
+	DEBUG_INFO("transmitter_mac : %pM\n", to_sawf_sp->inner.transmitter_mac);
+	DEBUG_INFO("receiver_mac : %pM\n", to_sawf_sp->inner.receiver_mac);
+	DEBUG_INFO("radio_band:");
+	for (i = 1; i < SP_RULE_MAX_VDEV_PER_ML; ++i) {
+		DEBUG_INFO("\n%s ", radio.radio_band[i]);
+	}
+
+	DEBUG_INFO("radio_channel: ");
+	for (i = 1; i < SP_RULE_MAX_VDEV_PER_ML; ++i) {
+		DEBUG_INFO("\n%d ", radio.radio_channel[i]);
+	}
+
+	DEBUG_INFO("\n");
+	DEBUG_INFO("radio_bandwidth:");
+	for (i = 1; i < SP_RULE_MAX_VDEV_PER_ML; ++i) {
+		DEBUG_INFO("\n%s ", radio.radio_bandwidth[i]);
+	}
+
+	DEBUG_INFO("band_mode: %d\n", wifi_metadata.band_mode);
+	DEBUG_INFO("channel_mode: %d\n", wifi_metadata.channel_mode);
+	DEBUG_INFO("bandwidth_mode: %d\n", wifi_metadata.bandwidth_mode);
+	DEBUG_INFO("bssid: %pM\n", wifi_metadata.bssid);
+	DEBUG_INFO("ssid_len: %d\n", wifi_metadata.ssid_len);
+	DEBUG_INFO("ssid: %s\n", wifi_metadata.ssid);
+	DEBUG_INFO("access_class: %d\n", wifi_metadata.access_class);
+	DEBUG_INFO("priority: %d\n", wifi_metadata.priority);
+
+	return true;
 }
 
 /*
@@ -2178,7 +2358,12 @@ static inline int sp_mapdb_rule_receive(struct sk_buff *skb, struct genl_info *i
 	DEBUG_INFO("classifier type: %d\n", to_sawf_sp.classifier_type);
 
 	if (info->attrs[SP_GNL_ATTR_WLAN_FLOW]) {
-		sp_mapdb_parse_wlan_rule(info, &to_sawf_sp);
+		if (!sp_mapdb_parse_wlan_rule(info, &to_sawf_sp)) {
+			rcu_read_unlock();
+			DEBUG_ERROR("Invalid input for WLAN Params for rule_id : %d\n", to_sawf_sp.id);
+			rule_result = SP_MAPDB_UPDATE_RESULT_ERR_INVALIDENTRY;
+			goto status_notify;
+		}
 	}
 
 	rcu_read_unlock();
@@ -2204,21 +2389,48 @@ status_notify:
 }
 
 /*
+ * sp_mapdb_parse_radio_info()
+ * 	API converting the radio info
+ */
+static inline void sp_mapdb_parse_radio_info(struct sp_rule_radio_info *radio, struct sp_rule *rule)
+{
+	char *band, *bw;
+	int t;
+
+	for (t = 1; t < SP_RULE_MAX_VDEV_PER_ML; t++) {
+		if (rule->inner.radio_band[t] == SP_RULE_BAND_VALID) {
+			band = sp_mapdb_enum_radio_band_to_str(t);
+			if (band) {
+				memcpy(radio->radio_band[t], band, sizeof(radio->radio_band[t]));
+			}
+
+			bw = sp_mapdb_enum_radio_bw_to_str(t);
+			if (bw) {
+				memcpy(radio->radio_bandwidth[t], bw, sizeof(radio->radio_bandwidth[t]));
+			}
+
+		}
+	}
+}
+
+/*
  * sp_mapdb_wlan_rule_query()
  * 	API to fill WLAN params to netlink msg
  * 	in the event of rule query from user space
  */
 static inline int sp_mapdb_wlan_rule_query(struct sk_buff *msg, struct sp_rule *rule)
 {
+	struct sp_rule_radio_info radio = {0};
 	char ssid[WLAN_SSID_MAX_LEN];
 
 	memcpy(ssid, rule->inner.ssid, sizeof(rule->inner.ssid));
+	sp_mapdb_parse_radio_info(&radio, rule);
 	if (nla_put_u8(msg, SP_GNL_ATTR_WLAN_FLOW, rule->inner.wlan_flow) ||
 		nla_put(msg, SP_GNL_ATTR_TRANSMITTER_MAC, ETH_ALEN, rule->inner.transmitter_mac) ||
 		nla_put(msg, SP_GNL_ATTR_RECEIVER_MAC, ETH_ALEN, rule->inner.receiver_mac) ||
-		nla_put_u32(msg, SP_GNL_ATTR_RADIO_BAND, rule->inner.radio_band) ||
+		nla_put(msg, SP_GNL_ATTR_RADIO_BAND, sizeof(radio.radio_band), radio.radio_band) ||
 		nla_put(msg, SP_GNL_ATTR_RADIO_CHANNEL, SP_RULE_MAX_VDEV_PER_ML, rule->inner.radio_channel) ||
-		nla_put_u32(msg, SP_GNL_ATTR_RADIO_BANDWIDTH, rule->inner.radio_bandwidth) ||
+		nla_put(msg, SP_GNL_ATTR_RADIO_BANDWIDTH, sizeof(radio.radio_bandwidth), radio.radio_bandwidth) ||
 		nla_put_u8(msg, SP_GNL_ATTR_BAND_MODE, rule->inner.band_mode) ||
 		nla_put_u8(msg, SP_GNL_ATTR_CHANNEL_MODE, rule->inner.channel_mode) ||
 		nla_put_u8(msg, SP_GNL_ATTR_BANDWIDTH_MODE, rule->inner.bandwidth_mode) ||
@@ -2626,9 +2838,9 @@ static struct nla_policy sp_genl_policy[SP_GNL_MAX + 1] = {
 	[SP_GNL_ATTR_WLAN_FLOW] 		=	{ .type = NLA_U8, },
 	[SP_GNL_ATTR_TRANSMITTER_MAC]	=	{ .len = ETH_ALEN, },
 	[SP_GNL_ATTR_RECEIVER_MAC]	=	{ .len = ETH_ALEN, },
-	[SP_GNL_ATTR_RADIO_BAND]	=	{ .type = NLA_U32, },
+	[SP_GNL_ATTR_RADIO_BAND]	=	{ .type = NLA_NESTED_ARRAY, },
 	[SP_GNL_ATTR_RADIO_CHANNEL]	=	{ .type = NLA_NESTED_ARRAY, },
-	[SP_GNL_ATTR_RADIO_BANDWIDTH]	=	{ .type = NLA_U32, },
+	[SP_GNL_ATTR_RADIO_BANDWIDTH]	=	{ .type = NLA_NESTED_ARRAY, },
 	[SP_GNL_ATTR_BAND_MODE] 	=	{ .type = NLA_U8, },
 	[SP_GNL_ATTR_CHANNEL_MODE] 	=	{ .type = NLA_U8, },
 	[SP_GNL_ATTR_BANDWIDTH_MODE] 	=	{ .type = NLA_U8, },
@@ -2693,10 +2905,10 @@ void sp_mapdb_fini(void)
 }
 
 /*
- * emesh_sp_wifi_plugin_query_wlan_rule_cb_register()
+ * sp_mapdb_wifi_plugin_query_wlan_rule_cb_register()
  * 	callback for plugin registration.
  */
-int emesh_sp_wifi_plugin_query_wlan_rule_cb_register(struct emesh_sp_wifi_sawf_callbacks *emesh_sp_wifi_cb)
+int sp_mapdb_wifi_plugin_query_wlan_rule_cb_register(struct emesh_sp_wifi_sawf_callbacks *emesh_sp_wifi_cb)
 {
 	if (emesh_sp_wifi.sawf_rule_query_callback) {
 		DEBUG_ERROR("EMESH_SP_WIFI_PLUGIN_QUERY_WLAN_RULE_CALLBACK already registered!!");
@@ -2706,17 +2918,43 @@ int emesh_sp_wifi_plugin_query_wlan_rule_cb_register(struct emesh_sp_wifi_sawf_c
 	emesh_sp_wifi.sawf_rule_query_callback = emesh_sp_wifi_cb->sawf_rule_query_callback;
 	return 0;
 }
-EXPORT_SYMBOL(emesh_sp_wifi_plugin_query_wlan_rule_cb_register);
+EXPORT_SYMBOL(sp_mapdb_wifi_plugin_query_wlan_rule_cb_register);
 
 /*
- * emesh_sp_wifi_plugin_query_wlan_rule_cb_unregister()
+ * sp_mapdb_wifi_plugin_query_wlan_rule_cb_unregister()
  * 	callback for plugin de-registration.
  */
-void emesh_sp_wifi_plugin_query_wlan_rule_cb_unregister()
+void sp_mapdb_wifi_plugin_query_wlan_rule_cb_unregister(void)
 {
 	emesh_sp_wifi.sawf_rule_query_callback = NULL;
 }
-EXPORT_SYMBOL(emesh_sp_wifi_plugin_query_wlan_rule_cb_unregister);
+EXPORT_SYMBOL(sp_mapdb_wifi_plugin_query_wlan_rule_cb_unregister);
+
+/*
+ * sp_mapdb_wifi_plugin_validate_wlan_rule_cb_register()
+ * 	callback for plugin registration.
+ */
+int sp_mapdb_wifi_plugin_validate_wlan_rule_cb_register(struct emesh_sp_wifi_sawf_callbacks *emesh_sp_wifi_cb)
+{
+	if (emesh_sp_wifi.sawf_rule_validate_callback) {
+		DEBUG_ERROR("EMESH_SP_WIFI_PLUGIN_VALIDATE_WLAN_RULE_CALLBACK already registered!!");
+		return -1;
+	}
+
+	emesh_sp_wifi.sawf_rule_validate_callback = emesh_sp_wifi_cb->sawf_rule_validate_callback;
+	return 0;
+}
+EXPORT_SYMBOL(sp_mapdb_wifi_plugin_validate_wlan_rule_cb_register);
+
+/*
+ * sp_mapdb_wifi_plugin_validate_wlan_rule_cb_unregister()
+ * 	callback for plugin de-registration.
+ */
+void sp_mapdb_wifi_plugin_validate_wlan_rule_cb_unregister(void)
+{
+	emesh_sp_wifi.sawf_rule_validate_callback = NULL;
+}
+EXPORT_SYMBOL(sp_mapdb_wifi_plugin_validate_wlan_rule_cb_unregister);
 
 /*
  * sp_netlink_init()
