@@ -108,6 +108,8 @@
 #define SP_RULE_VDEV_BAND_LENGTH	4	/* Max VDEV Band len as string */
 #define SP_RULE_VDEV_BANDWIDTH_LENGTH	6	/* Max VDEV Bandwidth len as string */
 #define SP_RULE_BAND_VALID	1	/* Indicates valid band */
+#define SP_RULE_PCP_VALID	0x4	/* Defined as WLAN driver */
+#define SP_RULE_AC_VALID	0x8	/* Defined as WLAN driver */
 
 /*
  * sp_mapdb_radio_band
@@ -133,6 +135,7 @@ enum sp_mapdb_radio_bandwidth {
 	SP_MAPDB_RADIO_BANDWIDTH_80,		/* Bandwidth 80Mhz */
 	SP_MAPDB_RADIO_BANDWIDTH_160,		/* Bandwidth 160Mhz */
 	SP_MAPDB_RADIO_BANDWIDTH_80_80,		/* Bandwidth 80_80Mhz */
+	SP_MAPDB_RADIO_BANDWIDTH_320,		/* Bandwidth 320Mhz */
 };
 
 /*
@@ -462,6 +465,11 @@ struct sp_rule_inner {
 	 * priority
 	 */
 	uint8_t priority;
+
+	/*
+	 * valid access class
+	 */
+	bool valid_ac;
 };
 
 /*
@@ -587,8 +595,10 @@ struct sp_rule_wifi_plugin_metadata {
 	uint8_t band_mode;	/* band mode */
 	uint8_t channel_mode;	/* channel mode */
 	uint8_t bandwidth_mode;	/* bandwidth mode */
-	uint8_t priority;	/* priority */
+	uint8_t skb_prio;	/* skb priority for the packet */
+	uint8_t priority;	/* user given priority */
 	uint8_t ssid_len;	/* ssid len */
+	uint8_t src_mac[ETH_ALEN];	/*Sender's mac */
 	uint8_t dest_mac[ETH_ALEN];	/*Receiver's mac */
 	uint8_t bssid[ETH_ALEN];	/* bssid */
 	uint8_t ra_mac[ETH_ALEN];	/* ra_mac */
@@ -598,7 +608,8 @@ struct sp_rule_wifi_plugin_metadata {
 	uint8_t radio_chan[SP_RULE_MAX_VDEV_PER_ML];	/* radio channel */
 	uint8_t pcp;	/* Receiver's pcp value */
 	uint8_t dscp;	/* Receiver's dscp value */
-	struct net_device *netdev;	/* netdev */
+	struct net_device *dest_dev;	/* dest dev */
+	struct net_device *src_dev;	/* src dev */
 	char ssid[WLAN_SSID_MAX_LEN];	/* ssid */
 } __attribute__((packed));
 

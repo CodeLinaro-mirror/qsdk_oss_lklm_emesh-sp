@@ -1269,6 +1269,8 @@ static inline char *sp_mapdb_enum_radio_bw_to_str(enum sp_mapdb_radio_bandwidth 
 		return "160";
 	case SP_MAPDB_RADIO_BANDWIDTH_80_80:
 		return "80_80";
+	case SP_MAPDB_RADIO_BANDWIDTH_320:
+		return "320";
 	}
 
 	return NULL;
@@ -1463,10 +1465,15 @@ EXPORT_SYMBOL(sp_mapdb_get_wlan_latency_params);
 static inline bool sp_mapdb_rule_query_wlan_params(struct sp_rule_wifi_plugin_metadata *wifi_metadata, struct sp_mapdb_rule_node *curnode, struct sp_rule_input_params *params)
 {
 	ether_addr_copy(wifi_metadata->dest_mac, params->dst.mac);
+	ether_addr_copy(wifi_metadata->src_mac, params->src.mac);
 	wifi_metadata->band_mode = curnode->rule.inner.band_mode;
 	wifi_metadata->channel_mode = curnode->rule.inner.channel_mode;
 	wifi_metadata->bandwidth_mode = curnode->rule.inner.bandwidth_mode;
-	wifi_metadata->access_class = curnode->rule.inner.access_class;
+	if (curnode->rule.inner.valid_ac) {
+		wifi_metadata->valid_flags |= SP_RULE_AC_VALID;
+		wifi_metadata->access_class = curnode->rule.inner.access_class;
+	}
+
 	wifi_metadata->priority = curnode->rule.inner.priority;
 	wifi_metadata->ssid_len = curnode->rule.inner.ssid_len;
 	memcpy(wifi_metadata->ssid, curnode->rule.inner.ssid, strlen(curnode->rule.inner.ssid) + 1);
@@ -1510,9 +1517,10 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 	enum sp_rule_ae_type ae_type = SP_RULE_AE_TYPE_DEFAULT;
 	uint16_t ipv4_frag_thresh = SP_RULE_INVALID_IPV4_FRAG_THRESH;
 	struct sp_rule_wifi_plugin_metadata wifi_metadata = {0};
-	struct net_device *dest_dev;
+	struct net_device *dest_dev, *src_dev;
 
 	dest_dev = params->dest_dev;
+	src_dev = params->src_dev;
 
 	if (!dest_dev) {
 		goto set_output;
@@ -1530,14 +1538,16 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 
 	rcu_read_unlock();
 	wifi_metadata.valid_flags = 0;
-	wifi_metadata.netdev = dest_dev;
+	wifi_metadata.dest_dev = dest_dev;
+	wifi_metadata.src_dev = src_dev;
+	wifi_metadata.skb_prio = skb->priority;
 
 	/*
 	 * fill pcp if valid
 	 */
 	if (params->vlan_tci != SP_RULE_INVALID_VLAN_TCI) {
 		wifi_metadata.pcp = (uint8_t)((params->vlan_tci & VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT);
-		wifi_metadata.valid_flags = 1;
+		wifi_metadata.valid_flags |= SP_RULE_PCP_VALID;
 	}
 
 	/*
@@ -1844,6 +1854,10 @@ static inline enum sp_mapdb_radio_bandwidth sp_mapdb_str_radio_bw_to_enum(char *
 		return SP_MAPDB_RADIO_BANDWIDTH_80_80;
 	}
 
+	if (!(strcasecmp(str, "320"))) {
+		return SP_MAPDB_RADIO_BANDWIDTH_320;
+	}
+
 	return SP_MAPDB_RADIO_BANDWIDTH_INVALID;
 }
 
@@ -1926,6 +1940,8 @@ static inline bool sp_mapdb_parse_wlan_rule(struct genl_info *info, struct sp_ru
 
 	if (info->attrs[SP_GNL_ATTR_ACCESS_CLASS]) {
 		wifi_metadata.access_class = nla_get_u8(info->attrs[SP_GNL_ATTR_ACCESS_CLASS]);
+		to_sawf_sp->inner.valid_ac = true;
+		wifi_metadata.valid_flags |= SP_RULE_AC_VALID;
 	}
 
 	if (info->attrs[SP_GNL_ATTR_PRIORITY]) {
