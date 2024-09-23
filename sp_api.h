@@ -101,28 +101,39 @@
 #define SP_RULE_INVALID_MSCS_TID_BITMAP		0x00		/* Invalid MSCS Bitmap */
 #define SP_RULE_INVALID_IPV4_FRAG_THRESH        0x00            /* Invalid fragmentation threshold */
 
-/*
- * Radio bands
- */
-#define SP_RULE_RADIO_BAND_2G	0x01	/* Band 2G */
-#define SP_RULE_RADIO_BAND_5G	0x02	/* Band 5G */
-#define SP_RULE_RADIO_BAND_5GH	0x04	/* Band 5GH */
-#define SP_RULE_RADIO_BAND_5GL	0x08	/* Band 5GL */
-#define SP_RULE_RADIO_BAND_6G	0x10	/* Band 6G */
-
-/*
- * Radio bandwidth
- */
-#define SP_RULE_RADIO_BANDWIDTH_20	0x01	/* Bandwidth 20Mhz */
-#define SP_RULE_RADIO_BANDWIDTH_40	0x02	/* Bandwidth 40Mhz */
-#define SP_RULE_RADIO_BANDWIDTH_80	0x04	/* Bandwidth 80Mhz */
-#define SP_RULE_RADIO_BANDWIDTH_160	0x08	/* Bandwidth 160Mhz */
-#define SP_RULE_RADIO_BANDWIDTH_80_80	0x10	/* Bandwidth 80+80Mhz */
-
 #define SP_RULE_MAX_VDEV_PER_ML 7
 #define WLAN_SSID_MAX_LEN	32	/* Max ssid len */
 #define SP_MAPDB_RADIO_FLAG_AND	"AND"	/* Radio mode AND */
 #define SP_MAPDB_RADIO_FLAG_OR	"OR"	/* Radio mode OR */
+#define SP_RULE_VDEV_BAND_LENGTH	4	/* Max VDEV Band len as string */
+#define SP_RULE_VDEV_BANDWIDTH_LENGTH	6	/* Max VDEV Bandwidth len as string */
+#define SP_RULE_BAND_VALID	1	/* Indicates valid band */
+
+/*
+ * sp_mapdb_radio_band
+ * 	WLAN supported bands
+ */
+enum sp_mapdb_radio_band {
+	SP_MAPDB_RADIO_BAND_INVALID,	/* Invalid radio band */
+	SP_MAPDB_RADIO_BAND_2G,			/* 2G radio band */
+	SP_MAPDB_RADIO_BAND_5G,			/* 5G radio band */
+	SP_MAPDB_RADIO_BAND_5GH,		/* 5GH radio band */
+	SP_MAPDB_RADIO_BAND_5GL,		/* 5GL radio band */
+	SP_MAPDB_RADIO_BAND_6G,			/* 6G radio band */
+};
+
+/*
+ * sp_mapdb_radio_bandwidth
+ * 	WLAN supported radio bandwidth
+ */
+enum sp_mapdb_radio_bandwidth {
+	SP_MAPDB_RADIO_BANDWIDTH_INVALID,		/* Invalid radio bandwidth */
+	SP_MAPDB_RADIO_BANDWIDTH_20,		/* Bandwidth 20Mhz */
+	SP_MAPDB_RADIO_BANDWIDTH_40,		/* Bandwidth 40Mhz */
+	SP_MAPDB_RADIO_BANDWIDTH_80,		/* Bandwidth 80Mhz */
+	SP_MAPDB_RADIO_BANDWIDTH_160,		/* Bandwidth 160Mhz */
+	SP_MAPDB_RADIO_BANDWIDTH_80_80,		/* Bandwidth 80_80Mhz */
+};
 
 /*
  * sp_mapdb_update_results
@@ -400,7 +411,7 @@ struct sp_rule_inner {
 	/*
 	 * Array of radio bands for each possible vdes
 	 */
-	uint32_t radio_band;
+	uint8_t radio_band[SP_RULE_MAX_VDEV_PER_ML];
 
 	/*
 	 * Array of radio channels for each possible VDEVs
@@ -410,7 +421,7 @@ struct sp_rule_inner {
 	/*
 	 * Array of radio bandwidth for each possible VDEVs
 	 */
-	uint32_t radio_bandwidth;
+	uint8_t radio_bandwidth[SP_RULE_MAX_VDEV_PER_ML];
 
 	/*
 	 * band mode
@@ -451,6 +462,28 @@ struct sp_rule_inner {
 	 * priority
 	 */
 	uint8_t priority;
+};
+
+/*
+ * sp_rule_radio_info
+ * 	This structure stores radio metadata from user
+ */
+struct sp_rule_radio_info {
+
+	/*
+	 * array of radio band from user
+	 */
+	char radio_band[SP_RULE_MAX_VDEV_PER_ML][SP_RULE_VDEV_BAND_LENGTH];
+
+	/*
+	 * array of radio bandwidth from user
+	 */
+	char radio_bandwidth[SP_RULE_MAX_VDEV_PER_ML][SP_RULE_VDEV_BANDWIDTH_LENGTH];
+
+	/*
+	 * array of radio channel from user
+	 */
+	uint8_t radio_channel[SP_RULE_MAX_VDEV_PER_ML];
 };
 
 /*
@@ -545,10 +578,10 @@ struct sp_rule_del_params {
 };
 
 /*
- * emesh_sp_wifi_plugin_metadata
+ * sp_rule_wifi_plugin_metadata
  * 	contains parameters for plugin module
  */
-struct emesh_sp_wifi_plugin_metadata {
+struct sp_rule_wifi_plugin_metadata {
 	uint8_t access_class;	/* access class */
 	uint8_t valid_flags;	/* valid flags */
 	uint8_t band_mode;	/* band mode */
@@ -560,11 +593,11 @@ struct emesh_sp_wifi_plugin_metadata {
 	uint8_t bssid[ETH_ALEN];	/* bssid */
 	uint8_t ra_mac[ETH_ALEN];	/* ra_mac */
 	uint8_t ta_mac[ETH_ALEN];	/* ta_mac */
-	uint32_t radio_band;	/* radio band */
-	uint32_t radio_bw;	/* radio bandwidth */
-	uint32_t pcp;	/* Receiver's pcp value */
-	uint32_t dscp;	/* Receiver's dscp value */
+	uint8_t radio_band[SP_RULE_MAX_VDEV_PER_ML];	/* radio band */
+	uint8_t radio_bw[SP_RULE_MAX_VDEV_PER_ML];	/* radio bandwidth */
 	uint8_t radio_chan[SP_RULE_MAX_VDEV_PER_ML];	/* radio channel */
+	uint8_t pcp;	/* Receiver's pcp value */
+	uint8_t dscp;	/* Receiver's dscp value */
 	struct net_device *netdev;	/* netdev */
 	char ssid[WLAN_SSID_MAX_LEN];	/* ssid */
 } __attribute__((packed));
@@ -573,24 +606,41 @@ struct emesh_sp_wifi_plugin_metadata {
  * callback for plugin
  * 	Emesh SP rule query callback to which Wi-Fi plugin module will register
  */
-typedef bool (*emesh_sp_wifi_sawf_rule_query_callback_t)(struct emesh_sp_wifi_plugin_metadata *wifi_info);
+typedef bool (*sp_rule_wifi_sawf_rule_query_callback_t)(struct sp_rule_wifi_plugin_metadata *wifi_info);
+
+/*
+ * callback for plugin
+ * 	Emesh sp rule validate callback to which Wi-Fi plugin module will register
+ */
+typedef bool (*sp_rule_wifi_sawf_rule_validate_callback_t)(struct sp_rule_wifi_plugin_metadata *wifi_info);
 
 /*
  * Data structure for emesh-sp wifi-plugin callbacks
  */
 struct emesh_sp_wifi_sawf_callbacks {
-	emesh_sp_wifi_sawf_rule_query_callback_t sawf_rule_query_callback;
+	sp_rule_wifi_sawf_rule_query_callback_t sawf_rule_query_callback;	/* WLAN rule query callback */
+	sp_rule_wifi_sawf_rule_validate_callback_t sawf_rule_validate_callback;	/* WLAN rule validate callback */
 };
 
 /*
  * Register WLAN rule query callback with plugin
  */
-int emesh_sp_wifi_plugin_query_wlan_rule_cb_register(struct emesh_sp_wifi_sawf_callbacks *wifi_plugin_cb);
+int sp_mapdb_wifi_plugin_query_wlan_rule_cb_register(struct emesh_sp_wifi_sawf_callbacks *wifi_plugin_cb);
 
 /*
  * Unregister WLAN rule query callback with plugin
  */
-void emesh_sp_wifi_plugin_query_wlan_rule_cb_unregister(void);
+void sp_mapdb_wifi_plugin_query_wlan_rule_cb_unregister(void);
+
+/*
+ * Register WLAN rule validate callback with plugin
+ */
+int sp_mapdb_wifi_plugin_validate_wlan_rule_cb_register(struct emesh_sp_wifi_sawf_callbacks *wifi_plugin_cb);
+
+/*
+ * Unregister WLAN rule validate callback with plugin
+ */
+void sp_mapdb_wifi_plugin_validate_wlan_rule_cb_unregister(void);
 
 sp_mapdb_update_result_t sp_mapdb_rule_update(struct sp_rule *newrule);
 
