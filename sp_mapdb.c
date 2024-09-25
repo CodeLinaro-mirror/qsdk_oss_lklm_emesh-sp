@@ -1292,7 +1292,9 @@ static inline void sp_mapdb_rule_print_input_wlan_params(struct sp_mapdb_rule_no
 
 	printk("band: ");
 	for (i = 0; i < SP_RULE_MAX_VDEV_PER_ML; i++) {
-		printk("%s ", sp_mapdb_enum_radio_band_to_str(curnode->rule.inner.radio_band[i]));
+		if (curnode->rule.inner.radio_band[i] == SP_RULE_BAND_VALID) {
+			printk("%s \n", sp_mapdb_enum_radio_band_to_str(i));
+		}
 	}
 
 	if (curnode->rule.inner.channel_mode == 1) {
@@ -2404,7 +2406,7 @@ static inline void sp_mapdb_parse_radio_info(struct sp_rule_radio_info *radio, s
 				memcpy(radio->radio_band[t], band, sizeof(radio->radio_band[t]));
 			}
 
-			bw = sp_mapdb_enum_radio_bw_to_str(t);
+			bw = sp_mapdb_enum_radio_bw_to_str(rule->inner.radio_bandwidth[t]);
 			if (bw) {
 				memcpy(radio->radio_bandwidth[t], bw, sizeof(radio->radio_bandwidth[t]));
 			}
