@@ -1888,65 +1888,57 @@ static inline bool sp_mapdb_construct_radio_info_map(struct sp_rule_radio_info *
  */
 static inline bool sp_mapdb_parse_wlan_rule(struct genl_info *info, struct sp_rule *to_sawf_sp)
 {
-	int i;
+	int i, rem;
 	struct sp_rule_radio_info radio = {0};
 	struct sp_rule_wifi_plugin_metadata wifi_metadata = {0};
+	struct nlattr *wlan_params = NULL, *attr = info->attrs[SP_GNL_ATTR_WLAN_FLOW];
 
-	if (info->attrs[SP_GNL_ATTR_TRANSMITTER_MAC]) {
-		memcpy(wifi_metadata.ta_mac, nla_data(info->attrs[SP_GNL_ATTR_TRANSMITTER_MAC]), ETH_ALEN);
-	}
-
-	if (info->attrs[SP_GNL_ATTR_RECEIVER_MAC]) {
-		memcpy(wifi_metadata.ra_mac, nla_data(info->attrs[SP_GNL_ATTR_RECEIVER_MAC]), ETH_ALEN);
-	}
-
-	if (info->attrs[SP_GNL_ATTR_RADIO_BAND]) {
-		memcpy(radio.radio_band, nla_data(info->attrs[SP_GNL_ATTR_RADIO_BAND]), sizeof(radio.radio_band));
-	}
-
-	if (info->attrs[SP_GNL_ATTR_RADIO_CHANNEL]) {
-		memcpy(radio.radio_channel, nla_data(info->attrs[SP_GNL_ATTR_RADIO_CHANNEL]), sizeof(radio.radio_channel));
-	}
-
-	if (info->attrs[SP_GNL_ATTR_RADIO_BANDWIDTH]) {
-		memcpy(radio.radio_bandwidth, nla_data(info->attrs[SP_GNL_ATTR_RADIO_BANDWIDTH]), sizeof(radio.radio_bandwidth));
+	nla_for_each_nested(wlan_params, attr, rem) {
+		switch(nla_type(wlan_params)) {
+		case SP_GNL_ATTR_TRANSMITTER_MAC:
+			memcpy(wifi_metadata.ta_mac, nla_data(wlan_params), ETH_ALEN);
+			break;
+		case SP_GNL_ATTR_RECEIVER_MAC:
+			memcpy(wifi_metadata.ra_mac, nla_data(wlan_params), ETH_ALEN);
+			break;
+		case SP_GNL_ATTR_RADIO_BAND:
+			memcpy(radio.radio_band, nla_data(wlan_params), sizeof(radio.radio_band));
+			break;
+		case SP_GNL_ATTR_RADIO_CHANNEL:
+			memcpy(radio.radio_channel, nla_data(wlan_params), sizeof(radio.radio_channel));
+			break;
+		case SP_GNL_ATTR_RADIO_BANDWIDTH:
+			memcpy(radio.radio_bandwidth, nla_data(wlan_params), sizeof(radio.radio_bandwidth));
+			break;
+		case SP_GNL_ATTR_BAND_MODE:
+			wifi_metadata.band_mode = nla_get_u8(wlan_params);
+			break;
+		case SP_GNL_ATTR_CHANNEL_MODE:
+			wifi_metadata.channel_mode = nla_get_u8(wlan_params);
+			break;
+		case SP_GNL_ATTR_BANDWIDTH_MODE:
+			wifi_metadata.bandwidth_mode = nla_get_u8(wlan_params);
+			break;
+		case SP_GNL_ATTR_BSSID:
+			memcpy(wifi_metadata.bssid, nla_data(wlan_params), ETH_ALEN);
+			break;
+		case SP_GNL_ATTR_SSID_LEN:
+			wifi_metadata.ssid_len = nla_get_u8(wlan_params);
+			break;
+		case SP_GNL_ATTR_SSID:
+			memcpy(wifi_metadata.ssid, nla_data(wlan_params), sizeof(wifi_metadata.ssid));
+			break;
+		case SP_GNL_ATTR_ACCESS_CLASS:
+			wifi_metadata.access_class = nla_get_u8(wlan_params);
+			to_sawf_sp->inner.valid_ac = true;
+			wifi_metadata.valid_flags |= SP_RULE_AC_VALID;
+			break;
+		case SP_GNL_ATTR_PRIORITY:
+			wifi_metadata.priority = nla_get_u8(wlan_params);
+		}
 	}
 
 	sp_mapdb_construct_radio_info_map(&radio, &wifi_metadata);
-
-	if (info->attrs[SP_GNL_ATTR_BAND_MODE]) {
-		wifi_metadata.band_mode = nla_get_u8(info->attrs[SP_GNL_ATTR_BAND_MODE]);
-	}
-
-	if (info->attrs[SP_GNL_ATTR_CHANNEL_MODE]) {
-		wifi_metadata.channel_mode = nla_get_u8(info->attrs[SP_GNL_ATTR_CHANNEL_MODE]);
-	}
-
-	if (info->attrs[SP_GNL_ATTR_BANDWIDTH_MODE]) {
-		wifi_metadata.bandwidth_mode = nla_get_u8(info->attrs[SP_GNL_ATTR_BANDWIDTH_MODE]);
-	}
-
-	if (info->attrs[SP_GNL_ATTR_BSSID]) {
-		memcpy(wifi_metadata.bssid, nla_data(info->attrs[SP_GNL_ATTR_BSSID]), ETH_ALEN);
-	}
-
-	if (info->attrs[SP_GNL_ATTR_SSID_LEN]) {
-		wifi_metadata.ssid_len = nla_get_u8(info->attrs[SP_GNL_ATTR_SSID_LEN]);
-	}
-
-	if (info->attrs[SP_GNL_ATTR_SSID]) {
-		memcpy(wifi_metadata.ssid, nla_data(info->attrs[SP_GNL_ATTR_SSID]), sizeof(wifi_metadata.ssid));
-	}
-
-	if (info->attrs[SP_GNL_ATTR_ACCESS_CLASS]) {
-		wifi_metadata.access_class = nla_get_u8(info->attrs[SP_GNL_ATTR_ACCESS_CLASS]);
-		to_sawf_sp->inner.valid_ac = true;
-		wifi_metadata.valid_flags |= SP_RULE_AC_VALID;
-	}
-
-	if (info->attrs[SP_GNL_ATTR_PRIORITY]) {
-		wifi_metadata.priority = nla_get_u8(info->attrs[SP_GNL_ATTR_PRIORITY]);
-	}
 
 	if (emesh_sp_wifi.sawf_rule_validate_callback) {
 
@@ -1966,7 +1958,7 @@ static inline bool sp_mapdb_parse_wlan_rule(struct genl_info *info, struct sp_ru
 	 * The rule has valid WLAN params.
 	 * 	Add them to SPM.
 	 */
-	to_sawf_sp->inner.wlan_flow = nla_get_u8(info->attrs[SP_GNL_ATTR_WLAN_FLOW]);
+	to_sawf_sp->inner.wlan_flow = 1;
 	to_sawf_sp->inner.band_mode = wifi_metadata.band_mode;
 	to_sawf_sp->inner.channel_mode = wifi_metadata.channel_mode;
 	to_sawf_sp->inner.bandwidth_mode = wifi_metadata.bandwidth_mode;
@@ -2853,7 +2845,7 @@ static struct nla_policy sp_genl_policy[SP_GNL_MAX + 1] = {
 	[SP_GNL_ATTR_BURST_SIZE_UL]		= { .type = NLA_U32, },
 	[SP_GNL_ATTR_SENSE_MESH_FLAG_IN]		= { .type = NLA_U32, },
 	[SP_GNL_ATTR_IPV4_FRAG_THRESH]          = { .type = NLA_U16, },
-	[SP_GNL_ATTR_WLAN_FLOW] 		=	{ .type = NLA_U8, },
+	[SP_GNL_ATTR_WLAN_FLOW] 		=	{ .type = NLA_NESTED, },
 	[SP_GNL_ATTR_TRANSMITTER_MAC]	=	{ .len = ETH_ALEN, },
 	[SP_GNL_ATTR_RECEIVER_MAC]	=	{ .len = ETH_ALEN, },
 	[SP_GNL_ATTR_RADIO_BAND]	=	{ .type = NLA_NESTED_ARRAY, },
