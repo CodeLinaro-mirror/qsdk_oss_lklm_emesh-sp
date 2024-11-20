@@ -1452,7 +1452,7 @@ void sp_mapdb_ruletable_print(void)
 		sp_mapdb_rule_print_input_params(hashentry_iter->rule_node);
 		printk("\n........OUTPUT PARAMS........\n");
 		printk("dscp_remark: %d, vlan_pcp_remark: %d\n", hashentry_iter->rule_node->rule.inner.dscp_remark, hashentry_iter->rule_node->rule.inner.vlan_pcp_remark);
-		printk("output(priority): %d, service_class_id: %d\n", hashentry_iter->rule_node->rule.inner.rule_output, hashentry_iter->rule_node->rule.inner.service_class_id);
+		printk("output(priority): %d, service_class_id: %d\n ipv4_frag_thresh: %d\n", hashentry_iter->rule_node->rule.inner.rule_output, hashentry_iter->rule_node->rule.inner.service_class_id, hashentry_iter->rule_node->rule.inner.ipv4_frag_thresh);
 		printk("MSCS TID BITMAP: %x: Priority Limit Value: %x\n", hashentry_iter->rule_node->rule.inner.mscs_tid_bitmap, hashentry_iter->rule_node->rule.inner.priority_limit);
 		printk("acceleration engine type: %s\n", sp_mapdb_enum_to_char_ae_type(hashentry_iter->rule_node->rule.inner.ae_type));
 	}
