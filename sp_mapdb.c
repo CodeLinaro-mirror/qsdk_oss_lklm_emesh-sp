@@ -601,6 +601,19 @@ static void sp_mapdb_get_tuple(struct sp_rule *rule, struct sp_mapdb_5tuple *tup
 }
 
 /*
+ * sp_mapdb_is_base_ae_ppe()
+ *	Returns if base AE is PPE
+ */
+static int sp_mapdb_is_base_ae_ppe(struct sp_rule *rule)
+{
+	if (rule->inner.ae_type == SP_RULE_AE_TYPE_PPE_VP || rule->inner.ae_type == SP_RULE_AE_TYPE_PPE_DS) {
+		return true;
+	}
+
+	return false;
+}
+
+/*
  * sp_mapdb_rule_add()
  * 	Adds (or modifies) the SP rule in the rule table.
  *
@@ -618,6 +631,16 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 	struct sp_mapdb_rule_id_hashentry *new_hashentry;
 	struct sp_mapdb_5tuple tuple = {0};
 	newrule->key = SP_RULE_INVALID_RULE_ID;
+
+	/*
+	 * An IFLI rule with PPE AE must be a background flow
+	 * there is no need to maintain these rules, but ECM
+	 * will still be notified in case AE switch is necessary
+	 */
+	if (sp_mapdb_is_base_ae_ppe(newrule) && rule_type == SP_RULE_TYPE_SAWF_IFLI) {
+		sp_mapdb_notifiers_call(newrule, SP_MAPDB_ADD_RULE);
+		return SP_MAPDB_UPDATE_RESULT_SUCCESS_ADD;
+	}
 
 	DEBUG_INFO("%px: Try adding rule id = %d with rule_type: %d\n", newrule, newrule->id, rule_type);
 
@@ -1429,7 +1452,7 @@ void sp_mapdb_ruletable_print(void)
 		sp_mapdb_rule_print_input_params(hashentry_iter->rule_node);
 		printk("\n........OUTPUT PARAMS........\n");
 		printk("dscp_remark: %d, vlan_pcp_remark: %d\n", hashentry_iter->rule_node->rule.inner.dscp_remark, hashentry_iter->rule_node->rule.inner.vlan_pcp_remark);
-		printk("output(priority): %d, service_class_id: %d\n", hashentry_iter->rule_node->rule.inner.rule_output, hashentry_iter->rule_node->rule.inner.service_class_id);
+		printk("output(priority): %d, service_class_id: %d\n ipv4_frag_thresh: %d\n", hashentry_iter->rule_node->rule.inner.rule_output, hashentry_iter->rule_node->rule.inner.service_class_id, hashentry_iter->rule_node->rule.inner.ipv4_frag_thresh);
 		printk("MSCS TID BITMAP: %x: Priority Limit Value: %x\n", hashentry_iter->rule_node->rule.inner.mscs_tid_bitmap, hashentry_iter->rule_node->rule.inner.priority_limit);
 		printk("acceleration engine type: %s\n", sp_mapdb_enum_to_char_ae_type(hashentry_iter->rule_node->rule.inner.ae_type));
 	}
