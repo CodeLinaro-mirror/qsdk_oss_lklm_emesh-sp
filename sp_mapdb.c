@@ -606,7 +606,8 @@ static void sp_mapdb_get_tuple(struct sp_rule *rule, struct sp_mapdb_5tuple *tup
  */
 static int sp_mapdb_is_base_ae_ppe(struct sp_rule *rule)
 {
-	if (rule->inner.ae_type == SP_RULE_AE_TYPE_PPE_VP || rule->inner.ae_type == SP_RULE_AE_TYPE_PPE_DS) {
+	if (rule->inner.ae_type == SP_RULE_AE_TYPE_PPE || rule->inner.ae_type == SP_RULE_AE_TYPE_PPE_VP ||
+		rule->inner.ae_type == SP_RULE_AE_TYPE_PPE_DS) {
 		return true;
 	}
 
