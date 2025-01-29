@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  *
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -700,10 +700,9 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 		rule_manager.rule_count++;
 		spin_unlock(&sp_mapdb_lock);
 
-		DEBUG_INFO("%px:Success rule id=%d with rule_type: %d\n",
-			   newrule, newrule->id, rule_type);
-
 		newrule->key = key;
+		DEBUG_INFO("%px:Success %s = %x rule_type: %d \n",
+				newrule, (rule_type == SP_RULE_TYPE_SAWF_IFLI) ? "key" : "rule_id",  (rule_type == SP_RULE_TYPE_SAWF_IFLI) ? newrule->key:newrule->id ,rule_type);
 
 		/*
 		 * Since this is inserting a new rule, the old precendence
@@ -720,8 +719,10 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 		list_replace_rcu(&cur_rule_node->rule_list, &new_rule_node->rule_list);
 		cur_hashentry->rule_node = new_rule_node;
 		spin_unlock(&sp_mapdb_lock);
+		newrule->key = key;
 
-		DEBUG_INFO("%px:overwrite rule id =%d rule_type: %d success.\n", newrule, newrule->id, rule_type);
+		DEBUG_INFO("%px:overwrite %s = %x rule_type: %d \n",
+				newrule, (rule_type == SP_RULE_TYPE_SAWF_IFLI) ? "key" : "rule_id",  (rule_type == SP_RULE_TYPE_SAWF_IFLI) ? newrule->key:newrule->id ,rule_type);
 
 		/*
 		 * If precedence doesn't change then it has to be some fields modified.
@@ -729,7 +730,6 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 		sp_mapdb_notifiers_call(newrule, SP_MAPDB_MODIFY_RULE);
 
 		call_rcu(&cur_rule_node->rcu, sp_rule_destroy_rcu);
-		newrule->key = key;
 
 		return SP_MAPDB_UPDATE_RESULT_SUCCESS_MODIFY;
 	}
