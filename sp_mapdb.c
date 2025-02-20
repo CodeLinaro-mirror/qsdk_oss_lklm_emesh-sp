@@ -639,6 +639,9 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 	 * will still be notified in case AE switch is necessary
 	 */
 	if (sp_mapdb_is_base_ae_ppe(newrule) && rule_type == SP_RULE_TYPE_SAWF_IFLI) {
+		sp_mapdb_get_tuple(newrule, &tuple);
+		key = sp_mapdb_get_hash(&tuple);
+		newrule->key = key;
 		sp_mapdb_notifiers_call(newrule, SP_MAPDB_ADD_RULE);
 		return SP_MAPDB_UPDATE_RESULT_SUCCESS_ADD;
 	}
