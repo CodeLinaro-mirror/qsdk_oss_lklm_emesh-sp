@@ -704,7 +704,8 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 		spin_unlock(&sp_mapdb_lock);
 
 		newrule->key = key;
-		DEBUG_INFO("%px:Success %s = %x rule_type: %d \n",
+		new_rule_node->rule.key = key;
+		DEBUG_INFO("%px:Success %s = %d rule_type: %d \n",
 				newrule, (rule_type == SP_RULE_TYPE_SAWF_IFLI) ? "key" : "rule_id",  (rule_type == SP_RULE_TYPE_SAWF_IFLI) ? newrule->key:newrule->id ,rule_type);
 
 		/*
@@ -723,6 +724,7 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 		cur_hashentry->rule_node = new_rule_node;
 		spin_unlock(&sp_mapdb_lock);
 		newrule->key = key;
+		new_rule_node->rule.key = key;
 
 		DEBUG_INFO("%px:overwrite %s = %x rule_type: %d \n",
 				newrule, (rule_type == SP_RULE_TYPE_SAWF_IFLI) ? "key" : "rule_id",  (rule_type == SP_RULE_TYPE_SAWF_IFLI) ? newrule->key:newrule->id ,rule_type);
@@ -774,7 +776,7 @@ static sp_mapdb_update_result_t sp_mapdb_rule_delete(uint32_t ruleid, uint32_t k
 	cur_hashentry = sp_mapdb_search_hashentry(key, ruleid, rule_type, tuple);
 	if (!cur_hashentry) {
 		spin_unlock(&sp_mapdb_lock);
-		DEBUG_WARN("there is no such rule as ruleID = %d, rule_type: %d\n", ruleid, rule_type);
+		DEBUG_WARN("there is no such rule as key = %d, ruleID = %d, rule_type: %d\n", key, ruleid, rule_type);
 		return SP_MAPDB_UPDATE_RESULT_ERR_RULENOEXIST;
 	}
 
