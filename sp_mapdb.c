@@ -1,19 +1,7 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- *
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  */
 
 #include <linux/kernel.h>
@@ -544,7 +532,7 @@ static struct sp_mapdb_rule_id_hashentry *sp_mapdb_search_hashentry(uint32_t key
 		 * It is possible there are multiple rules without valid rule id
 		 * which can only be identified by tuple
 		 */
-		if (ruleid == SP_RULE_INVALID_RULE_ID && rule_type == SP_RULE_TYPE_SAWF_IFLI) {
+		if (rule_type == SP_RULE_TYPE_SAWF_IFLI) {
 			if (!tuple) {
 				DEBUG_WARN("Tuple is invalid for IFLI rule hash search\n");
 				return NULL;
@@ -1276,7 +1264,7 @@ sp_mapdb_update_result_t sp_mapdb_rule_update(struct sp_rule *newrule)
 
 	switch (newrule->cmd) {
 	case SP_MAPDB_ADD_REMOVE_FILTER_DELETE:
-		if (newrule->id == SP_RULE_INVALID_RULE_ID) {
+		if (newrule->classifier_type == SP_RULE_TYPE_SAWF_IFLI) {
 			sp_mapdb_get_tuple(newrule, &tuple);
 			key = sp_mapdb_get_hash(&tuple);
 			error_code = sp_mapdb_rule_delete(newrule->id, key, newrule->classifier_type, &tuple);
