@@ -1511,6 +1511,20 @@ static inline void sp_mapdb_rule_print_input_params(struct sp_mapdb_rule_node *c
 }
 
 /*
+ * sp_mapdb_rule_print_output_params()
+ * 	Print the output parameters of current rule.
+ */
+static inline void sp_mapdb_rule_print_output_params(struct sp_mapdb_rule_node *curnode)
+{
+	printk("\n........OUTPUT PARAMS........\n");
+	printk("dscp_remark: %d, vlan_pcp_remark: %d\n", curnode->rule.inner.dscp_remark, curnode->rule.inner.vlan_pcp_remark);
+	printk("output(priority): %d, service_class_id: %d\n ipv4_frag_thresh: %d\n", curnode->rule.inner.rule_output, curnode->rule.inner.service_class_id, curnode->rule.inner.ipv4_frag_thresh);
+	printk("MSCS TID BITMAP: %x: Priority Limit Value: %x\n", curnode->rule.inner.mscs_tid_bitmap, curnode->rule.inner.priority_limit);
+	printk("acceleration engine type: %s\n", sp_mapdb_enum_to_char_ae_type(curnode->rule.inner.ae_type));
+	printk("out_class_id: %d\n", curnode->rule.inner.out_class_id);
+}
+
+/*
  * sp_mapdb_ruletable_print()
  *	Print the rule table.
  */
@@ -1525,11 +1539,7 @@ void sp_mapdb_ruletable_print(void)
 	hash_for_each_safe(rule_manager.rule_hashmap, hash_bkt, hlist_tmp, hashentry_iter, hlist) {
 		printk("\nid: %d, classifier_type: %s, precedence: %d\n", hashentry_iter->rule_node->rule.id, sp_mapdb_get_classifier_type_str(hashentry_iter->rule_node->rule.classifier_type), hashentry_iter->rule_node->rule.rule_precedence);
 		sp_mapdb_rule_print_input_params(hashentry_iter->rule_node);
-		printk("\n........OUTPUT PARAMS........\n");
-		printk("dscp_remark: %d, vlan_pcp_remark: %d\n", hashentry_iter->rule_node->rule.inner.dscp_remark, hashentry_iter->rule_node->rule.inner.vlan_pcp_remark);
-		printk("output(priority): %d, service_class_id: %d\n ipv4_frag_thresh: %d\n", hashentry_iter->rule_node->rule.inner.rule_output, hashentry_iter->rule_node->rule.inner.service_class_id, hashentry_iter->rule_node->rule.inner.ipv4_frag_thresh);
-		printk("MSCS TID BITMAP: %x: Priority Limit Value: %x\n", hashentry_iter->rule_node->rule.inner.mscs_tid_bitmap, hashentry_iter->rule_node->rule.inner.priority_limit);
-		printk("acceleration engine type: %s\n", sp_mapdb_enum_to_char_ae_type(hashentry_iter->rule_node->rule.inner.ae_type));
+		sp_mapdb_rule_print_output_params(hashentry_iter->rule_node);
 	}
 
 
@@ -1662,6 +1672,7 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 	uint16_t ipv4_frag_thresh = SP_RULE_INVALID_IPV4_FRAG_THRESH;
 	struct sp_rule_wifi_plugin_metadata wifi_metadata = {0};
 	struct net_device *dest_dev, *src_dev;
+	uint32_t out_class_id = 0;
 
 	dest_dev = params->dest_dev;
 	src_dev = params->src_dev;
@@ -1759,6 +1770,7 @@ fill_output:
 				ipv4_frag_thresh = curnode->rule.inner.ipv4_frag_thresh;
 				rule_id = curnode->rule.id;
 				ae_type = curnode->rule.inner.ae_type;
+				out_class_id = curnode->rule.inner.out_class_id;
 				sawf_rule_type = SP_RULE_TYPE_SAWF;
 				goto set_output;
 			}
@@ -1777,6 +1789,7 @@ fill_output:
 					vlan_pcp_remark = curnode->rule.inner.vlan_pcp_remark;
 					service_class_id = curnode->rule.inner.service_class_id;
 					rule_id = curnode->rule.id;
+					out_class_id = curnode->rule.inner.out_class_id;
 					sawf_rule_type = SP_RULE_TYPE_SAWF_SCS;
 					goto set_output;
 				}
@@ -1794,6 +1807,7 @@ fill_output:
 		sawf_rule_type = SP_RULE_TYPE_SAWF_IFLI;
 		ae_type = rule->rule.inner.ae_type;
 		rule_output->key = rule->rule.key;
+		out_class_id = rule->rule.inner.out_class_id;
 		goto set_output;
 	}
 
@@ -1806,6 +1820,7 @@ set_output:
 	rule_output->vlan_pcp_remark = vlan_pcp_remark;
 	rule_output->sawf_rule_type = sawf_rule_type;
 	rule_output->ae_type = ae_type;
+	rule_output->out_class_id = out_class_id;
 }
 EXPORT_SYMBOL(sp_mapdb_rule_apply_sawf);
 
@@ -2511,6 +2526,11 @@ static inline int sp_mapdb_rule_receive(struct sk_buff *skb, struct genl_info *i
 
 	DEBUG_INFO("classifier type: %d\n", to_sawf_sp.classifier_type);
 
+	if (info->attrs[SP_GNL_ATTR_OUT_CLASS_ID]) {
+		to_sawf_sp.inner.out_class_id = nla_get_u32(info->attrs[SP_GNL_ATTR_OUT_CLASS_ID]);
+		DEBUG_INFO("out_class_id: 0x%x\n", to_sawf_sp.inner.out_class_id);
+	}
+
 	if (info->attrs[SP_GNL_ATTR_WLAN_FLOW]) {
 		if (!sp_mapdb_parse_wlan_rule(info, &to_sawf_sp)) {
 			rcu_read_unlock();
@@ -3029,6 +3049,7 @@ static struct nla_policy sp_genl_policy[SP_GNL_MAX + 1] = {
 	[SP_GNL_ATTR_PRIORITY]		= { .type = NLA_U8, },
 	[SP_GNL_ATTR_RM_SYNC_MSG]		= { .len = sizeof(struct sp_rm_sync_msg) },
 	[SP_GNL_ATTR_DELETE_SYNC_MSG] = { .len = sizeof(struct sp_del_sync_msg) },
+	[SP_GNL_ATTR_OUT_CLASS_ID] 	= { .type = NLA_U32, },
 };
 
 /* Spm generic netlink operations */
