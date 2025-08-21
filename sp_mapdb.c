@@ -494,11 +494,11 @@ static inline void sp_mapdb_rules_init(void)
 {
 	int i;
 
-	spin_lock(&sp_mapdb_lock);
+	spin_lock_bh(&sp_mapdb_lock);
 	for (i = 0; i < SP_MAPDB_RULE_MAX_PRECEDENCENUM; i++) {
 		INIT_LIST_HEAD(&rule_manager.prec_map[i].rule_list);
 	}
-	spin_unlock(&sp_mapdb_lock);
+	spin_unlock_bh(&sp_mapdb_lock);
 
 	hash_init(rule_manager.rule_hashmap);
 	rule_manager.rule_count = 0;
@@ -668,10 +668,10 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 		key = sp_mapdb_get_hash(&tuple);
 	}
 
-	spin_lock(&sp_mapdb_lock);
+	spin_lock_bh(&sp_mapdb_lock);
 	cur_hashentry = sp_mapdb_search_hashentry(key, newrule->id, rule_type, &tuple);
 	if (!cur_hashentry) {
-		spin_unlock(&sp_mapdb_lock);
+		spin_unlock_bh(&sp_mapdb_lock);
 		new_hashentry = (struct sp_mapdb_rule_id_hashentry *)kzalloc(sizeof(struct sp_mapdb_rule_id_hashentry), GFP_KERNEL);
 		if (!new_hashentry) {
 			DEBUG_ERROR("%px:Error, allocate hashentry failed.\n", newrule);
@@ -683,13 +683,13 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 		 * Inserting new rule node and hash entry in prec_map
 		 * and hashmap respectively.
 		 */
-		spin_lock(&sp_mapdb_lock);
+		spin_lock_bh(&sp_mapdb_lock);
 		new_hashentry->rule_node = new_rule_node;
 
 		list_add_rcu(&new_rule_node->rule_list, &rule_manager.prec_map[newrule_precedence].rule_list);
 		hash_add(rule_manager.rule_hashmap, &new_hashentry->hlist,key);
 		rule_manager.rule_count++;
-		spin_unlock(&sp_mapdb_lock);
+		spin_unlock_bh(&sp_mapdb_lock);
 
 		newrule->key = key;
 		new_rule_node->rule.key = key;
@@ -710,7 +710,7 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 	if (cur_rule_node->rule.rule_precedence == newrule_precedence) {
 		list_replace_rcu(&cur_rule_node->rule_list, &new_rule_node->rule_list);
 		cur_hashentry->rule_node = new_rule_node;
-		spin_unlock(&sp_mapdb_lock);
+		spin_unlock_bh(&sp_mapdb_lock);
 		newrule->key = key;
 		new_rule_node->rule.key = key;
 
@@ -731,7 +731,7 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 	list_add_rcu(&new_rule_node->rule_list, &rule_manager.prec_map[newrule_precedence].rule_list);
 	cur_hashentry->rule_node = new_rule_node;
 	newrule->key = key;
-	spin_unlock(&sp_mapdb_lock);
+	spin_unlock_bh(&sp_mapdb_lock);
 
 	/*
 	 * Fields other than rule_precedence can still be updated along with rule_precedence.
@@ -754,16 +754,16 @@ static sp_mapdb_update_result_t sp_mapdb_rule_delete(uint32_t ruleid, uint32_t k
 	struct sp_mapdb_rule_node *tobedeleted;
 	struct sp_mapdb_rule_id_hashentry *cur_hashentry = NULL;
 
-	spin_lock(&sp_mapdb_lock);
+	spin_lock_bh(&sp_mapdb_lock);
 	if (rule_manager.rule_count == 0) {
-		spin_unlock(&sp_mapdb_lock);
+		spin_unlock_bh(&sp_mapdb_lock);
 		DEBUG_WARN("rule table is empty\n");
 		return SP_MAPDB_UPDATE_RESULT_ERR_TBLEMPTY;
 	}
 
 	cur_hashentry = sp_mapdb_search_hashentry(key, ruleid, rule_type, tuple);
 	if (!cur_hashentry) {
-		spin_unlock(&sp_mapdb_lock);
+		spin_unlock_bh(&sp_mapdb_lock);
 		DEBUG_WARN("there is no such rule as key = %d, ruleID = %d, rule_type: %d\n", key, ruleid, rule_type);
 		return SP_MAPDB_UPDATE_RESULT_ERR_RULENOEXIST;
 	}
@@ -773,7 +773,7 @@ static sp_mapdb_update_result_t sp_mapdb_rule_delete(uint32_t ruleid, uint32_t k
 	hash_del(&cur_hashentry->hlist);
 	kfree(cur_hashentry);
 	rule_manager.rule_count--;
-	spin_unlock(&sp_mapdb_lock);
+	spin_unlock_bh(&sp_mapdb_lock);
 
 	DEBUG_INFO("Successful deletion\n");
 
@@ -1205,9 +1205,9 @@ void sp_mapdb_ruletable_flush(void)
 	struct hlist_node *hlist_tmp;
 	int hash_bkt;
 
-	spin_lock(&sp_mapdb_lock);
+	spin_lock_bh(&sp_mapdb_lock);
 	if (rule_manager.rule_count == 0) {
-		spin_unlock(&sp_mapdb_lock);
+		spin_unlock_bh(&sp_mapdb_lock);
 		DEBUG_WARN("The rule table is already empty. No action needed. \n");
 		return;
 	}
@@ -1232,7 +1232,7 @@ void sp_mapdb_ruletable_flush(void)
 		kfree(hashentry_iter);
 	}
 	rule_manager.rule_count = 0;
-	spin_unlock(&sp_mapdb_lock);
+	spin_unlock_bh(&sp_mapdb_lock);
 }
 EXPORT_SYMBOL(sp_mapdb_ruletable_flush);
 
@@ -2558,22 +2558,22 @@ static inline int sp_mapdb_rule_query(struct sk_buff *skb, struct genl_info *inf
 	DEBUG_INFO("User requested rule with rule_id: 0x%x \n", rule_id);
 	rcu_read_unlock();
 
-	spin_lock(&sp_mapdb_lock);
+	spin_lock_bh(&sp_mapdb_lock);
 	if (!rule_manager.rule_count) {
-		spin_unlock(&sp_mapdb_lock);
+		spin_unlock_bh(&sp_mapdb_lock);
 		DEBUG_WARN("Requested rule table is empty\n");
 		goto put_failure;
 	}
 
 	cur_hashentry = sp_mapdb_search_hashentry(rule_id, rule_id, SP_RULE_TYPE_SAWF, NULL);
 	if (!cur_hashentry) {
-		spin_unlock(&sp_mapdb_lock);
+		spin_unlock_bh(&sp_mapdb_lock);
 		DEBUG_WARN("Invalid rule with ruleID = %d, rule_type: %d\n", rule_id, SP_RULE_TYPE_SAWF);
 		goto put_failure;
 	}
 
 	rule = cur_hashentry->rule_node->rule;
-	spin_unlock(&sp_mapdb_lock);
+	spin_unlock_bh(&sp_mapdb_lock);
 
 	if (nla_put_u32(msg, SP_GNL_ATTR_ID, rule.id) ||
 	    nla_put_u8(msg, SP_GNL_ATTR_RULE_PRECEDENCE, rule.rule_precedence) ||
@@ -2704,13 +2704,13 @@ static inline int sp_mapdb_rule_query_by_type(struct sk_buff *skb, struct genl_i
 		goto put_failure;
 	}
 
-	spin_lock(&sp_mapdb_lock);
+	spin_lock_bh(&sp_mapdb_lock);
 	if (!rule_manager.rule_count) {
-		spin_unlock(&sp_mapdb_lock);
+		spin_unlock_bh(&sp_mapdb_lock);
 		DEBUG_WARN("Requested rule table is empty\n");
 		goto put_failure;
 	}
-	spin_unlock(&sp_mapdb_lock);
+	spin_unlock_bh(&sp_mapdb_lock);
 
 	for (i = SP_MAPDB_RULE_MAX_PRECEDENCENUM - 1; i >= 0; i--) {
 		list_for_each_entry_rcu(curnode, &(rule_manager.prec_map[i].rule_list), rule_list) {
@@ -2817,9 +2817,9 @@ static inline int sp_mapdb_ruletable_flush_classifier_type(struct sk_buff *skb, 
 	rcu_read_unlock();
 
 	INIT_HLIST_HEAD(&tmp_head_hashentry);
-	spin_lock(&sp_mapdb_lock);
+	spin_lock_bh(&sp_mapdb_lock);
 	if (rule_manager.rule_count == 0) {
-		spin_unlock(&sp_mapdb_lock);
+		spin_unlock_bh(&sp_mapdb_lock);
 		DEBUG_WARN("The rule table is already empty. No action needed. \n");
 		return 0;
 	}
@@ -2849,7 +2849,7 @@ static inline int sp_mapdb_ruletable_flush_classifier_type(struct sk_buff *skb, 
 		}
 	}
 
-	spin_unlock(&sp_mapdb_lock);
+	spin_unlock_bh(&sp_mapdb_lock);
 
 	hlist_for_each_entry_safe(hashentry_iter, hlist_tmp, &tmp_head_hashentry, hlist) {
 		hash_del(&hashentry_iter->hlist);
