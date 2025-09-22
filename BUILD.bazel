@@ -1,0 +1,19 @@
+load("//build/kernel/kleaf:kernel.bzl", "ddk_headers")
+
+package(
+    default_visibility=[
+        "//visibility:public",
+    ],
+)
+
+ddk_headers(
+    name = "emesh_sp_headers",
+    hdrs = glob(["**/*.h"]),
+    linux_includes = [
+        ".",
+    ],
+)
+
+load(":emesh_sp.bzl", "define_emesh_sp")
+define_emesh_sp()
+
