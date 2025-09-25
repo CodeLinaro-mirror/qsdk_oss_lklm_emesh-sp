@@ -1,19 +1,7 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- *
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  */
 
 #ifndef _SP_API_H
@@ -664,6 +652,20 @@ int sp_mapdb_wifi_plugin_validate_wlan_rule_cb_register(struct emesh_sp_wifi_saw
 void sp_mapdb_wifi_plugin_validate_wlan_rule_cb_unregister(void);
 
 /*
+ * sp_del_sync_msg
+ *	This structure repressents the msg contents of a msg sent from SPM to user space based on 5 tuple
+ */
+struct __attribute__((__packed__)) sp_del_sync_msg {
+	uint32_t src_ip[4];		/* Src IP Addr */
+	uint32_t dst_ip[4];		/* Dst IP Addr */
+	uint16_t src_port;		/* Src Port */
+	uint16_t dst_port;		/* Dst Port */
+	uint8_t protocol;		/* Protocol number */
+	uint8_t ip_version;		/* IPv4 or IPv6 */
+};
+
+
+/*
  * sp_rm_sync_msg
  *	This structure repressents the msg contents of a msg sent from ECM to RM
  */
@@ -697,4 +699,5 @@ void sp_mapdb_apply_scs(struct sk_buff *skb, struct sp_rule_input_params *params
 void sp_mapdb_apply_mscs(struct sk_buff *skb, struct sp_rule_input_params *params,
 			      struct sp_rule_output_params *output);
 char *sp_mapdb_get_classifier_type_str(enum sp_rule_classifier_type type);
+int sp_mapdb_delete_notify_sync(struct sp_del_sync_msg *del_msg);
 #endif
