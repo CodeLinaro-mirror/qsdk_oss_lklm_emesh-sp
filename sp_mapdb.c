@@ -36,6 +36,18 @@ static unsigned long single_writer = 0;
 static struct genl_family sp_genl_family;
 
 /*
+ * Multicast group for spm
+ */
+enum spm_multicast_groups {
+	SPM_MCGRP_DELETE,
+};
+
+static const struct genl_multicast_group sp_genl_mcgrps[] = {
+	[SPM_MCGRP_DELETE] = { .name = "spm_del_event" },
+};
+
+
+/*
  * Registration/Unregistration methods for SPM rule update/add/delete notifications.
  */
 static RAW_NOTIFIER_HEAD(sp_mapdb_notifier_chain);
@@ -753,6 +765,7 @@ static sp_mapdb_update_result_t sp_mapdb_rule_delete(uint32_t ruleid, uint32_t k
 {
 	struct sp_mapdb_rule_node *tobedeleted;
 	struct sp_mapdb_rule_id_hashentry *cur_hashentry = NULL;
+	struct sp_del_sync_msg del_msg = {0};
 
 	spin_lock_bh(&sp_mapdb_lock);
 	if (rule_manager.rule_count == 0) {
@@ -769,6 +782,26 @@ static sp_mapdb_update_result_t sp_mapdb_rule_delete(uint32_t ruleid, uint32_t k
 	}
 
 	tobedeleted = cur_hashentry->rule_node;
+
+	/* Populate delete message before deleting the rule node */
+	del_msg.ip_version = tobedeleted->rule.inner.ip_version_type;
+	del_msg.src_port = tobedeleted->rule.inner.src_port;
+	del_msg.dst_port = tobedeleted->rule.inner.dst_port;
+	del_msg.protocol = tobedeleted->rule.inner.protocol_number;
+
+	if (del_msg.ip_version == 4) {
+		del_msg.src_ip[0] = tobedeleted->rule.inner.src_ipv4_addr;
+		del_msg.dst_ip[0] = tobedeleted->rule.inner.dst_ipv4_addr;
+	} else if (del_msg.ip_version == 6) {
+		memcpy(del_msg.src_ip, tobedeleted->rule.inner.src_ipv6_addr, sizeof(uint32_t) * 4);
+		memcpy(del_msg.dst_ip, tobedeleted->rule.inner.dst_ipv6_addr, sizeof(uint32_t) * 4);
+	}
+
+	DEBUG_INFO(" Size of sp_del_sync_msg: %zu \
+			src ip: %pI4, dest ip: %pI4, \
+			protocol: %u, ip version: %u, src_port: %u, dst_port: %u",
+			sizeof(struct sp_del_sync_msg), &del_msg.src_ip[0], &del_msg.dst_ip[0], del_msg.protocol, del_msg.ip_version, del_msg.src_port, del_msg.dst_port);
+
 	list_del_rcu(&tobedeleted->rule_list);
 	hash_del(&cur_hashentry->hlist);
 	kfree(cur_hashentry);
@@ -787,6 +820,12 @@ static sp_mapdb_update_result_t sp_mapdb_rule_delete(uint32_t ruleid, uint32_t k
 	if (rule_type != SP_RULE_TYPE_SAWF_IFLI) {
 		sp_mapdb_notifiers_call(&tobedeleted->rule, SP_MAPDB_REMOVE_RULE);
 	}
+
+	/*
+	 * Notify user space application about SPM rule deletion
+	 */
+	DEBUG_INFO("Sending delete notification to user space application. \n");
+	sp_mapdb_delete_notify_sync(&del_msg);
 
 	call_rcu(&tobedeleted->rcu, sp_rule_destroy_rcu);
 
@@ -1134,6 +1173,53 @@ int sp_mapdb_rm_sync(struct sp_rm_sync_msg *rm_msg)
 }
 
 EXPORT_SYMBOL(sp_mapdb_rm_sync);
+
+
+/*
+ * sp_mapdb_delete_notify_sync
+ *	Sends a multicast netlink message to user-space apps
+ *	notifying about a rule deletion.
+ */
+int sp_mapdb_delete_notify_sync(struct sp_del_sync_msg *del_msg)
+{
+	struct sk_buff *msg;
+	void *hdr;
+
+	if (!sync_msg_net) {
+		DEBUG_WARN("Delete notify sync socket is not setup\n");
+		return -EINVAL;
+	}
+
+	/*
+	 * An atomic message must be allocated as this funciton
+	 * may be called from an interrupt context
+	 */
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_ATOMIC);
+	if (!msg) {
+		DEBUG_WARN("Failed to allocate netlink message for delete notification\n");
+		return -ENOMEM;
+	}
+
+	hdr = genlmsg_put(msg, 0, 0,
+			&sp_genl_family, 0, SPM_CMD_RULE_ACTION); // Using a new command ID
+
+	if (!hdr) {
+		DEBUG_WARN("Failed to put hdr in netlink buffer for delete notification\n");
+		nlmsg_free(msg);
+		return -ENOMEM;
+	}
+
+	if (nla_put(msg, SP_GNL_ATTR_DELETE_SYNC_MSG, sizeof(struct sp_del_sync_msg), del_msg)) {
+		DEBUG_WARN("Failed to put delete sync message in netlink buffer\n");
+		genlmsg_cancel(msg, hdr);
+		nlmsg_free(msg);
+		return -EMSGSIZE;
+	}
+
+	genlmsg_end(msg, hdr);
+	DEBUG_WARN("Sending multicast message to user space\n");
+	return genlmsg_multicast(&sp_genl_family, msg, 0, SPM_MCGRP_DELETE, GFP_ATOMIC);
+}
 
 /*
  * sp_mapdb_enum_to_char_ae_type()
@@ -2947,6 +3033,7 @@ static struct nla_policy sp_genl_policy[SP_GNL_MAX + 1] = {
 	[SP_GNL_ATTR_ACCESS_CLASS]		= { .type = NLA_U8, },
 	[SP_GNL_ATTR_PRIORITY]		= { .type = NLA_U8, },
 	[SP_GNL_ATTR_RM_SYNC_MSG]		= { .len = sizeof(struct sp_rm_sync_msg) },
+	[SP_GNL_ATTR_DELETE_SYNC_MSG] = { .len = sizeof(struct sp_del_sync_msg) },
 };
 
 /* Spm generic netlink operations */
@@ -3003,6 +3090,8 @@ static struct genl_family sp_genl_family = {
 	.module         = THIS_MODULE,
 	.ops            = sp_genl_ops,
 	.n_ops          = ARRAY_SIZE(sp_genl_ops),
+	.mcgrps         = sp_genl_mcgrps,
+	.n_mcgrps       = ARRAY_SIZE(sp_genl_mcgrps),
 };
 
 /*
