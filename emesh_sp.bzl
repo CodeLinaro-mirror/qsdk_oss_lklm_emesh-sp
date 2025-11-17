@@ -27,6 +27,7 @@ def _define_modules(target, variant):
         name = "{}_{}_emesh_sp".format(target, variant),
         out = "emesh-sp.ko",
         srcs = _srcs,
+        copts = _copts,
         kernel_build = "//msm-kernel:{}_{}".format(target, variant),
         deps = [
             ":emesh_sp_headers",
