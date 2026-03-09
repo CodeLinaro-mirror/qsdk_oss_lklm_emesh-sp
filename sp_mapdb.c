@@ -648,8 +648,8 @@ static sp_mapdb_update_result_t sp_mapdb_rule_add(struct sp_rule *newrule, uint8
 		return SP_MAPDB_UPDATE_RESULT_ERR_TBLFULL;
 	}
 
-	if (newrule->inner.rule_output >= SP_MAPDB_NO_MATCH) {
-		DEBUG_WARN("%px:Invalid rule output value %d (valid range:0-9)\n", newrule, newrule->inner.rule_output);
+	if (newrule->inner.out_priority >= SP_MAPDB_NO_MATCH) {
+		DEBUG_WARN("%px:Invalid rule output value %d (valid range:0-9)\n", newrule, newrule->inner.out_priority);
 		return SP_MAPDB_UPDATE_RESULT_ERR_INVALIDENTRY;
 	}
 
@@ -1079,7 +1079,7 @@ static uint8_t sp_mapdb_ruletable_search(struct sk_buff *skb, uint8_t *smac, uin
 			DEBUG_INFO("Matching with rid = %d (emesh case)\n", curnode->rule.id);
 			if (curnode->rule.classifier_type == SP_RULE_TYPE_MESH) {
 				if (sp_mapdb_rule_match(skb, &curnode->rule, smac, dmac)) {
-					output = curnode->rule.inner.rule_output;
+					output = curnode->rule.inner.out_priority;
 					goto set_output;
 				}
 			}
@@ -1518,7 +1518,7 @@ static inline void sp_mapdb_rule_print_output_params(struct sp_mapdb_rule_node *
 {
 	printk("\n........OUTPUT PARAMS........\n");
 	printk("dscp_remark: %d, vlan_pcp_remark: %d\n", curnode->rule.inner.dscp_remark, curnode->rule.inner.vlan_pcp_remark);
-	printk("output(priority): %d, service_class_id: %d\n ipv4_frag_thresh: %d\n", curnode->rule.inner.rule_output, curnode->rule.inner.service_class_id, curnode->rule.inner.ipv4_frag_thresh);
+	printk("output(priority): %d, service_class_id: %d\n ipv4_frag_thresh: %d\n", curnode->rule.inner.out_priority, curnode->rule.inner.service_class_id, curnode->rule.inner.ipv4_frag_thresh);
 	printk("MSCS TID BITMAP: %x: Priority Limit Value: %x\n", curnode->rule.inner.mscs_tid_bitmap, curnode->rule.inner.priority_limit);
 	printk("acceleration engine type: %s\n", sp_mapdb_enum_to_char_ae_type(curnode->rule.inner.ae_type));
 	printk("out_class_id: %d\n", curnode->rule.inner.out_class_id);
@@ -1763,7 +1763,7 @@ void sp_mapdb_rule_apply_sawf(struct sk_buff *skb, struct sp_rule_input_params *
 				}
 
 fill_output:
-				output = curnode->rule.inner.rule_output;
+				output = curnode->rule.inner.out_priority;
 				dscp_remark = curnode->rule.inner.dscp_remark;
 				vlan_pcp_remark = curnode->rule.inner.vlan_pcp_remark;
 				service_class_id = curnode->rule.inner.service_class_id;
@@ -1784,7 +1784,7 @@ fill_output:
 			if (curnode->rule.classifier_type == SP_RULE_TYPE_SAWF_SCS ||
 					curnode->rule.classifier_type == SP_RULE_TYPE_SCS) {
 				if (sp_mapdb_rule_match_sawf(&curnode->rule, params)) {
-					output = curnode->rule.inner.rule_output;
+					output = curnode->rule.inner.out_priority;
 					dscp_remark = curnode->rule.inner.dscp_remark;
 					vlan_pcp_remark = curnode->rule.inner.vlan_pcp_remark;
 					service_class_id = curnode->rule.inner.service_class_id;
@@ -1800,7 +1800,7 @@ fill_output:
 	/* Traverse for SAWF-IFLI rule type */
 	rule = sp_mapdb_get_ifli_rule(params);
 	if (rule) {
-		output = rule->rule.inner.rule_output;
+		output = rule->rule.inner.out_priority;
 		dscp_remark = rule->rule.inner.dscp_remark;
 		service_class_id = rule->rule.inner.service_class_id;
 		rule_id = rule->rule.id;
@@ -1855,7 +1855,7 @@ void sp_mapdb_apply_scs(struct sk_buff *skb, struct sp_rule_input_params *params
 			DEBUG_INFO("Matching with rule id = %d (scs case)\n", curnode->rule.id);
 			if (curnode->rule.classifier_type == SP_RULE_TYPE_SCS) {
 				if (sp_mapdb_rule_match_sawf(&curnode->rule, params)) {
-					priority = curnode->rule.inner.rule_output;
+					priority = curnode->rule.inner.out_priority;
 					rule_id = curnode->rule.id;
 					goto set_output;
 				}
@@ -2222,9 +2222,9 @@ static inline int sp_mapdb_rule_receive(struct sk_buff *skb, struct genl_info *i
 		DEBUG_INFO("Rule precedence: 0x%x\n", to_sawf_sp.rule_precedence);
 	}
 
-	if (info->attrs[SP_GNL_ATTR_RULE_OUTPUT]) {
-		to_sawf_sp.inner.rule_output = nla_get_u8(info->attrs[SP_GNL_ATTR_RULE_OUTPUT]);
-		DEBUG_INFO("Rule output: 0x%x\n", to_sawf_sp.inner.rule_output);
+	if (info->attrs[SP_GNL_ATTR_OUT_PRIORITY]) {
+		to_sawf_sp.inner.out_priority = nla_get_u8(info->attrs[SP_GNL_ATTR_OUT_PRIORITY]);
+		DEBUG_INFO("Rule output: 0x%x\n", to_sawf_sp.inner.out_priority);
 	}
 
 	if (info->attrs[SP_GNL_ATTR_USER_PRIORITY]) {
@@ -2678,7 +2678,7 @@ static inline int sp_mapdb_rule_query(struct sk_buff *skb, struct genl_info *inf
 
 	if (nla_put_u32(msg, SP_GNL_ATTR_ID, rule.id) ||
 	    nla_put_u8(msg, SP_GNL_ATTR_RULE_PRECEDENCE, rule.rule_precedence) ||
-	    nla_put_u8(msg, SP_GNL_ATTR_RULE_OUTPUT, rule.inner.rule_output) ||
+	    nla_put_u8(msg, SP_GNL_ATTR_OUT_PRIORITY, rule.inner.out_priority) ||
 	    nla_put_u8(msg, SP_GNL_ATTR_CLASSIFIER_TYPE, rule.classifier_type) ||
 	    nla_put(msg, SP_GNL_ATTR_SRC_MAC, ETH_ALEN, rule.inner.sa) ||
 	    nla_put(msg, SP_GNL_ATTR_DST_MAC, ETH_ALEN, rule.inner.da)) {
@@ -2820,7 +2820,7 @@ static inline int sp_mapdb_rule_query_by_type(struct sk_buff *skb, struct genl_i
 
 				if (nla_put_u32(msg, SP_GNL_ATTR_ID, rule.id) ||
 				    nla_put_u8(msg, SP_GNL_ATTR_RULE_PRECEDENCE, rule.rule_precedence) ||
-				    nla_put_u8(msg, SP_GNL_ATTR_RULE_OUTPUT, rule.inner.rule_output) ||
+				    nla_put_u8(msg, SP_GNL_ATTR_OUT_PRIORITY, rule.inner.out_priority) ||
 				    nla_put_u8(msg, SP_GNL_ATTR_CLASSIFIER_TYPE, rule.classifier_type) ||
 				    nla_put(msg, SP_GNL_ATTR_SRC_MAC, ETH_ALEN, rule.inner.sa) ||
 				    nla_put(msg, SP_GNL_ATTR_DST_MAC, ETH_ALEN, rule.inner.da)) {
@@ -2991,7 +2991,7 @@ static struct nla_policy sp_genl_policy[SP_GNL_MAX + 1] = {
 	[SP_GNL_ATTR_ID]		= { .type = NLA_U32, },
 	[SP_GNL_ATTR_ADD_DELETE_RULE]		= { .type = NLA_U8, },
 	[SP_GNL_ATTR_RULE_PRECEDENCE]		= { .type = NLA_U8, },
-	[SP_GNL_ATTR_RULE_OUTPUT]		= { .type = NLA_U8, },
+	[SP_GNL_ATTR_OUT_PRIORITY]		= { .type = NLA_U8, },
 	[SP_GNL_ATTR_USER_PRIORITY]		= { .type = NLA_U8, },
 	[SP_GNL_ATTR_SRC_MAC]		= { .len = ETH_ALEN, },
 	[SP_GNL_ATTR_DST_MAC]		= { .len = ETH_ALEN, },

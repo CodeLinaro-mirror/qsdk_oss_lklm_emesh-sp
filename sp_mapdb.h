@@ -46,7 +46,7 @@ enum sp_gnl_attr {
 	SP_GNL_ATTR_ID,
 	SP_GNL_ATTR_ADD_DELETE_RULE,
 	SP_GNL_ATTR_RULE_PRECEDENCE,
-	SP_GNL_ATTR_RULE_OUTPUT,
+	SP_GNL_ATTR_OUT_PRIORITY,
 	SP_GNL_ATTR_USER_PRIORITY,
 	SP_GNL_ATTR_SRC_MAC,
 	SP_GNL_ATTR_DST_MAC,
@@ -110,15 +110,15 @@ enum sp_gnl_attr {
 #define SP_GNL_MAX (SP_GNL_ATTR_MAX + 1)
 
 /*
- * sp_mapdb_rule_output_types
- *	Types of rule_output value
+ * sp_mapdb_out_priority_types
+ *	Types of out_priority value
  */
-enum sp_mapdb_rule_output_types {
+enum sp_mapdb_out_priority_types {
 	SP_MAPDB_USE_DSCP = 0x08,	/* Apply DSCP value */
 	SP_MAPDB_USE_UP,		/* Apply UP value */
 	SP_MAPDB_NO_MATCH,		/* No rule match (Apply default PCP) */
 };
-typedef enum sp_mapdb_rule_output_types sp_mapdb_rule_output_type_t;
+typedef enum sp_mapdb_out_priority_types sp_mapdb_out_priority_type_t;
 
 /*
  * sp_mapdb_5tuple

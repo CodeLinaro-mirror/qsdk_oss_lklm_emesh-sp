@@ -206,11 +206,11 @@ struct sp_rule_inner {
 	uint32_t flags_sawf;
 
 	/*
-	 * The value of rule_output determines how to set the pcp value
+	 * The value of out_priority determines how to set the pcp value
 	 * to be marked in the matched packet.
 	 * Maximum possible value is 15.
 	 */
-	uint16_t rule_output;
+	uint16_t out_priority;
 
 	/*
 	 * Target Class ID (major:minor) of qdisc
