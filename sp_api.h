@@ -208,9 +208,15 @@ struct sp_rule_inner {
 	/*
 	 * The value of rule_output determines how to set the pcp value
 	 * to be marked in the matched packet.
-	 * Maximum possible value is 7.
+	 * Maximum possible value is 15.
 	 */
 	uint16_t rule_output;
+
+	/*
+	 * Target Class ID (major:minor) of qdisc
+	 * configured on egress interface passed by SPM rule.
+	 */
+	uint32_t out_class_id;
 
 	/*
 	 * UP in 802.11 qos control
@@ -566,6 +572,7 @@ struct sp_rule_output_params {
 	enum sp_rule_ae_type ae_type;	/* acceleration engine mode */
 	uint32_t key;			/* Key to get hash bucket index*/
 	uint16_t ipv4_frag_thresh;	/* Threshold size to initiate fragmentation */
+	uint32_t out_class_id;		/* Target class ID of qdisc on egress interface */
 };
 
 /*
